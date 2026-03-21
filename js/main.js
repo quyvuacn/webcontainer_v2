@@ -1,5 +1,5 @@
 import { RamVfs } from './vfs_ram.js'
-import { initOpfsBridge, opfsWrite, opfsListAll, createBroadcastChannel } from './opfs_bridge.js'
+import { initOpfsBridge, opfsWrite, opfsDelete, opfsListAll, createBroadcastChannel } from './opfs_bridge.js'
 import { VFS_PREFIX } from './config.js'
 import { createCdnVfsProxy } from './cdn/vfs_proxy.js'
 const SAB_SIZE = 4 * 1024 * 1024
@@ -43,6 +43,12 @@ function handleVfsPort(port) {
       case 'release_lock': {
         vfs.releaseLock(data.lockId)
         port.postMessage({ id: data.id })
+        break
+      }
+      case 'delete': {
+        const path = data.path?.replace(/^\/+/, '') || ''
+        const ok = vfs.delete ? vfs.delete(path) : false
+        port.postMessage({ id: data.id, ok })
         break
       }
     }
@@ -125,7 +131,7 @@ async function bootstrap() {
   await acquireTabLock()
 
   initOpfsBridge('/js/opfs_worker.js')
-  vfs = new RamVfs(opfsWrite)
+  vfs = new RamVfs(opfsWrite, opfsDelete)
   opfsReady = true
 
   let results = []

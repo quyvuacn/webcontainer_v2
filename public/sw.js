@@ -9,6 +9,7 @@ self.addEventListener('install', event => {
       '/index.html',
       '/js/vfs_ram.js',
       '/js/opfs_bridge.js',
+      '/js/opfs_worker.js',
       '/js/config.js',
       '/js/main.js',
       '/js/app.js',

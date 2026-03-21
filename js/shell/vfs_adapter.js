@@ -79,8 +79,13 @@ export function createShellVfsAdapter(ramVfs) {
 
     async unlink(path) {
       const p = prefix(path)
-      if (!ramVfs.files.has(p)) throw { code: 'ENOENT', path: p }
-      ramVfs.files.delete(p)
+      if (ramVfs.delete) {
+        if (!ramVfs.delete(p)) throw { code: 'ENOENT', path: p }
+      } else if (ramVfs.files.has(p)) {
+        ramVfs.files.delete(p)
+      } else {
+        throw { code: 'ENOENT', path: p }
+      }
     },
 
     async rmdir(path, opts = {}) {
@@ -88,11 +93,14 @@ export function createShellVfsAdapter(ramVfs) {
       if (!ramVfs.dirs.has(p)) throw { code: 'ENOENT', path: p }
       if (opts.recursive) {
         const toDel = [...ramVfs.dirs].filter(d => d === p || d.startsWith(p + '/'))
+        for (const f of [...ramVfs.files.keys()]) {
+          if (f === p || f.startsWith(p + '/')) {
+            if (ramVfs.delete) ramVfs.delete(f)
+            else ramVfs.files.delete(f)
+          }
+        }
         for (const d of toDel.sort((a, b) => b.length - a.length)) {
           ramVfs.dirs.delete(d)
-        }
-        for (const f of ramVfs.files.keys()) {
-          if (f === p || f.startsWith(p + '/')) ramVfs.files.delete(f)
         }
       } else {
         const hasChild = [...ramVfs.files.keys(), ...ramVfs.dirs].some(k =>

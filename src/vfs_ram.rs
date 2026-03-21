@@ -71,6 +71,7 @@ impl RamVfs {
     pub fn write(&mut self, path: &str, content: Vec<u8>) {
         let path  = normalize(path);
         let mtime = now_ms();
+        let existed = self.files.contains_key(&path);
 
         self.files.insert(path.clone(), FileEntry {
             content: content.clone(),
@@ -78,7 +79,7 @@ impl RamVfs {
             mode: 0o644,
         });
         self.ensure_ancestors(&path);
-        self.maybe_emit(&path, EventKind::Modified);
+        self.maybe_emit(&path, if existed { EventKind::Modified } else { EventKind::Created });
 
         // Fire-and-forget — do not drop the Promise silently in strict mode;
         // bind it to a no-op then() so the engine doesn't warn.

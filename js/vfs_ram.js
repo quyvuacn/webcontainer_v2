@@ -1,7 +1,7 @@
 const WATCH_KIND = { Modified: 'Modified', Created: 'Created', Deleted: 'Deleted' }
 
 class RamVfs {
-  constructor(opfsWrite) {
+  constructor(opfsWrite, opfsDelete) {
     this.files = new Map()
     this.dirs = new Set()
     this.watchers = []
@@ -10,6 +10,17 @@ class RamVfs {
     this.nextWid = 1
     this.nextLid = 1
     this.opfsWrite = opfsWrite
+    this.opfsDelete = opfsDelete
+  }
+
+  delete(path) {
+    const existed = this.files.has(path)
+    if (existed) {
+      this.files.delete(path)
+      this.maybeEmit(path, WATCH_KIND.Deleted)
+      if (this.opfsDelete) this.opfsDelete(path).catch(() => {})
+    }
+    return existed
   }
 
   pathMatches(watchPath, changed, recursive) {

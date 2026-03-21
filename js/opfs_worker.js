@@ -15,8 +15,6 @@
  *   list_all  {}                           → { files: [{path, content}] }
  */
 
-const root = navigator.storage.getDirectory();
-
 // BroadcastChannel notifies other tabs when a file changes.
 const bc = new BroadcastChannel("vfs_opfs_sync");
 
