@@ -38,7 +38,10 @@ export function installNodeRuntimeHooks(opts: NodeRuntimeHooksOptions): void {
   const g = globalThis as Record<string, unknown>;
 
   // ── http.createServer().listen(port) ────────────────────────────────────────
-  g.__setupVirtualPort = opts.setupVirtualPort;
+  g.__setupVirtualPort = (port: number, handler: (req: unknown, res: unknown) => void) => {
+    (g.__wcActiveServerCount as number)++;
+    opts.setupVirtualPort(port, handler);
+  };
 
   // ── child_process.spawn('node', args) ──────────────────────────────────────
   // Wrap runNode so stdout/stderr are piped to the ChildProcess EventEmitter.
@@ -91,4 +94,5 @@ export function uninstallNodeRuntimeHooks(): void {
   delete g.__setupVirtualPort;
   delete g.__runNode;
   delete g.__spawnWorkerThreadsWorker;
+  delete g.__wcActiveServerCount;
 }

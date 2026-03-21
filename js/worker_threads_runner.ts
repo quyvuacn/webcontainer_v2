@@ -1,17 +1,13 @@
 /**
- * Web Worker entrypoint for worker_threads.Worker(filename).
+ * Web Worker entrypoint for:
+ * - worker_threads.Worker(filename)  — init: { vfsPort, filename, workerData, cwd, env, threadId }
+ * - shell `node` command (Ctrl+C kill) — init: { vfsPort, args, cwd, env }
  *
- * Protocol (init from main):
- *   { type: 'init', vfsPort, filename, workerData, cwd, env, threadId }
- *
- * Protocol (messages to main):
- *   { type: 'message', data }
- *   { type: 'error', data }
- *   { type: 'exit', data }
- *   { type: 'stdout', data } / { type: 'stderr', data }
+ * Messages to main: { type: 'message'|'error'|'exit'|'stdout'|'stderr', data }
  */
 
 import type { Stats } from '../node/vfs/core/adapter'
+import { preloadEsbuildWasm } from '../node/transform/esm-to-cjs'
 import { runNode } from '../node/cli'
 import { PathUtils } from '../node/vfs/core/path'
 
@@ -105,11 +101,43 @@ function createPortVfs(port: MessagePort) {
   }
 }
 
-self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: MessagePort; filename?: string; workerData?: unknown; cwd?: string; env?: Record<string, string>; threadId?: number }>) => {
+async function runInWorker(vfsPort: MessagePort, terminal: { write: (t: string) => void; writeError: (t: string) => void }, args: string[], cwd: string, env: Record<string, string>) {
+  const g = globalThis as Record<string, unknown>
+  if (!g.__wcEsbuildWasmModule) {
+    terminal.writeError('Loading esbuild.wasm...\r\n')
+    await preloadEsbuildWasm()
+  }
+  const exitCode = await runNode(args, createPortVfs(vfsPort), terminal, { cwd, env })
+  self.postMessage({ type: 'exit', data: exitCode })
+}
+
+self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: MessagePort; filename?: string; args?: string[]; workerData?: unknown; cwd?: string; env?: Record<string, string>; threadId?: number }>) => {
   if (data.type === 'init') {
-    const { vfsPort, filename, workerData, cwd = '/', env = {}, threadId = 0 } = data
-    if (!vfsPort || !filename) {
-      self.postMessage({ type: 'error', data: 'worker_threads_runner: init requires vfsPort and filename' })
+    const { vfsPort, filename, args, workerData, cwd = '/', env = {}, threadId = 0 } = data
+    if (!vfsPort) {
+      self.postMessage({ type: 'error', data: 'init requires vfsPort' })
+      self.postMessage({ type: 'exit', data: 1 })
+      return
+    }
+
+    const terminal = {
+      write: (t: string) => self.postMessage({ type: 'stdout', data: t }),
+      writeError: (t: string) => self.postMessage({ type: 'stderr', data: t }),
+    }
+
+    if (args) {
+      try {
+        await runInWorker(vfsPort, terminal, args, cwd, env)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        self.postMessage({ type: 'stderr', data: msg + '\n' })
+        self.postMessage({ type: 'exit', data: 1 })
+      }
+      return
+    }
+
+    if (!filename) {
+      self.postMessage({ type: 'error', data: 'init requires filename or args' })
       self.postMessage({ type: 'exit', data: 1 })
       return
     }
@@ -119,16 +147,9 @@ self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: Message
     ;(globalThis as Record<string, unknown>).isMainThread = false
     ;(globalThis as Record<string, unknown>).threadId = threadId
 
-    const vfs = createPortVfs(vfsPort)
-    const terminal = {
-      write: (t: string) => self.postMessage({ type: 'stdout', data: t }),
-      writeError: (t: string) => self.postMessage({ type: 'stderr', data: t }),
-    }
-
     try {
       const resolvedPath = PathUtils.isAbsolute(filename) ? PathUtils.normalize(filename) : PathUtils.join(cwd, filename)
-      const exitCode = await runNode([resolvedPath], vfs, terminal, { cwd, env })
-      self.postMessage({ type: 'exit', data: exitCode })
+      await runInWorker(vfsPort, terminal, [resolvedPath], cwd, env)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       self.postMessage({ type: 'error', data: msg })

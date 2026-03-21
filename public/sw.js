@@ -7,6 +7,7 @@ self.addEventListener('install', event => {
     caches.open('static-v4').then(c => c.addAll([
       '/',
       '/index.html',
+      '/sample_vite.json',
       '/js/vfs_ram.ts',
       '/js/opfs_bridge.ts',
       '/js/opfs_worker.ts',

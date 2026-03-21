@@ -34,7 +34,7 @@ class ProcessStream extends EventEmitter {
   }
 
   write(s: string | Uint8Array, _encoding?: string, cb?: (err?: Error) => void): boolean {
-    this._write(String(s))
+    this._write(String(s).replace(/\r?\n/g, '\r\n'))
     cb?.()
     return true
   }
@@ -162,10 +162,15 @@ export class ProcessPolyfill {
   cwd = (): string => this._cwd
 
   chdir = (dir: string): void => {
-    this._cwd = PathUtils.normalize(PathUtils.resolve(this._cwd, dir))
+    this._cwd = PathUtils.join(this._cwd, dir)
   }
 
   exit = (code = 0): never => {
+    const r = (globalThis as { __wcExitResolve?: (c: number) => void }).__wcExitResolve
+    if (r) {
+      r(code)
+      delete (globalThis as { __wcExitResolve?: (c: number) => void }).__wcExitResolve
+    }
     throw new ProcessExitError(code)
   }
 

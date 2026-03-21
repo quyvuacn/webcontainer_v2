@@ -2,7 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { bootstrap } from './main'
-import { createNodeRunner, createSpawnSyncAsync } from './run_node'
+import { createNodeRunner, createSpawnSyncAsync, terminateCurrentNodeWorker } from './run_node'
 import { installNodeRuntimeHooks } from '../node/polyfills/node-runtime-hooks'
 import { createVirtualFSAdapter } from '../node/vfs/core/adapter'
 import { createShellVfsAdapter } from './shell/vfs_adapter'
@@ -19,7 +19,8 @@ const termOpts = {
 }
 
 let termCount = 0
-let vfs: { read: (p: string) => Uint8Array | null; write: (p: string, b: Uint8Array | string) => void; acquireLock: (p: string) => number; releaseLock: (id: number) => void } | null = null
+type RamVfs = { read: (p: string) => Uint8Array | null; write: (p: string, b: Uint8Array | string) => void; exists: (p: string) => boolean; readdir?: (p: string) => string[]; stat?: (p: string) => { isFile: () => boolean; isDirectory: () => boolean } | null; mkdir?: (p: string) => void; dirs?: Set<string>; files?: Map<string, unknown>; acquireLock: (p: string) => number; releaseLock: (id: number) => void }
+let vfs: RamVfs | null = null
 let createServerFn: ((handler: (req: unknown, res: unknown) => void) => { listen: (port: number) => void }) | null = null
 
 function createTerminal(container: HTMLElement, writeWelcome = false) {
@@ -39,12 +40,13 @@ function createTerminal(container: HTMLElement, writeWelcome = false) {
   return { term, fitAddon }
 }
 
-function createShellState(vfs: NonNullable<typeof vfs>, term: Terminal) {
+function createShellState(vfs: RamVfs, term: Terminal) {
   const shellVfs = createShellVfsAdapter(vfs)
-  const terminal = { write: (t: string) => term.write(t), writeError: (t: string) => term.write('\x1b[31m' + t + '\x1b[0m') }
+  const toTerm = (t: string) => term.write(t.replace(/\r?\n/g, '\r\n'))
+  const terminal = { write: toTerm, writeError: (t: string) => term.write('\x1b[31m' + t.replace(/\r?\n/g, '\r\n') + '\x1b[0m') }
   const spawnNode = createNodeRunner(vfs, terminal)
   const spawnSyncAsync = createSpawnSyncAsync(vfs)
-  const shell = new Shell(shellVfs, t => term.write(t), {
+  const shell = new Shell(shellVfs, toTerm, {
     cwd: 'project',
     user: 'user',
     spawnNode,
@@ -95,7 +97,10 @@ function wireInput(meta: { term: Terminal; shell: Shell; state: { lineBuffer: st
       term.write('^C\r\n')
       state.lineBuffer = ''
       state.cursorIndex = 0
-      term.write(shell.getPrompt())
+      if (terminateCurrentNodeWorker()) return
+      const emit = (globalThis as { __wcEmitSIGINT?: () => void }).__wcEmitSIGINT
+      if (emit) emit()
+      else term.write(shell.getPrompt())
       return
     }
     if (data === '\x0c') {
@@ -229,10 +234,22 @@ async function init() {
 
     term.write('\x1b[2K\x1b[1G')
 
-    vfs.write('project/index.html', '<html><body><h1>Browser Node</h1><p>F5 restores from OPFS</p></body></html>')
-    vfs.write('project/hello.js', 'console.log("Hello!"); process.argv.forEach((a,i)=>console.log(i,a))')
-    vfs.write('project/package.json', JSON.stringify({ name: 'demo', dependencies: { lodash: '^4.17.21' } }))
-    if (!vfs.read('project/index.html')) throw new Error('VFS write/read failed')
+    try {
+      const res = await fetch('/sample_vite.json')
+      if (res.ok) {
+        const { files } = (await res.json()) as { files?: Record<string, string> }
+        if (files) {
+          for (const [path, content] of Object.entries(files)) {
+            vfs.write('project/' + path, content)
+          }
+        }
+      }
+    } catch {}
+    if (!vfs.read('project/package.json')) {
+      vfs.write('project/package.json', JSON.stringify({ name: 'demo', dependencies: { lodash: '^4.17.21' } }))
+      vfs.write('project/hello.js', 'console.log("Hello!"); process.argv.forEach((a,i)=>console.log(i,a))')
+      vfs.write('project/index.html', '<html><body><h1>Browser Node</h1><p>F5 restores</p></body></html>')
+    }
 
     createServerFn((req: { path?: string; url?: string }, res: { setHeader: (k: string, v: string) => void; end: (s: string) => void }) => {
       res.setHeader('Content-Type', 'text/plain')

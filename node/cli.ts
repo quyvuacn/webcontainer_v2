@@ -88,6 +88,22 @@ export async function runNode(
     terminal,
   )
 
+  const g = globalThis as Record<string, unknown>
+  const stack = (g.__wcProcessStack as ProcessPolyfill[]) ?? []
+  stack.push(process)
+  g.__wcProcessStack = stack
+  g.__wcEmitSIGINT = () => {
+    const s = g.__wcProcessStack as ProcessPolyfill[]
+    if (!s?.length) return
+    const p = s.pop()!
+    try {
+      if (p.listenerCount('SIGINT') > 0) p.emit('SIGINT')
+      else p.exit(130)
+    } catch {
+      ;(g as { __wcEmitSIGINT?: () => void }).__wcEmitSIGINT?.()
+    }
+  }
+
   const fileSource = opts?.fileSource
   const resolver = new ModuleResolver(vfs, {
     conditions: ['require', 'node', 'default'],
@@ -98,7 +114,10 @@ export async function runNode(
   const builtins = createBuiltinMap(vfs, process, () => process.cwd(), syncCache, fileSource)
   const loader = new CJSLoader(vfs, resolver, cache, builtins, process, syncCache, fileSource)
 
-  const g = globalThis as Record<string, unknown>
+  g.__wcActiveServerCount = 0
+  const exitPromise = new Promise<number>((resolve) => {
+    ;(g as { __wcExitResolve?: (code: number) => void }).__wcExitResolve = resolve
+  })
   const fsMod = builtins.get('node:fs') ?? builtins.get('fs')
   if (fsMod) g.fs = fsMod
   const pathMod = builtins.get('node:path') ?? builtins.get('path')
@@ -114,6 +133,7 @@ export async function runNode(
     }
     await ensureInit()
     await loader.run(resolvedPath, cwd)
+    if ((g.__wcActiveServerCount as number) > 0) return await exitPromise
     return 0
   } catch (err) {
     if (err instanceof ProcessExitError) {
@@ -122,6 +142,10 @@ export async function runNode(
     const msg = err instanceof Error ? err.stack ?? err.message : String(err)
     ;(terminal.writeError ?? terminal.write)(`${msg}\n`)
     return 1
+  } finally {
+    const s = g.__wcProcessStack as ProcessPolyfill[]
+    if (s?.length && s[s.length - 1] === process) s.pop()
+    if (!s?.length) delete g.__wcEmitSIGINT
   }
 }
 
