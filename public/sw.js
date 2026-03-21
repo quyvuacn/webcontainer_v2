@@ -4,7 +4,7 @@ const portBuffers = new Map()
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open('static-v2').then(c => c.addAll([
+    caches.open('static-v3').then(c => c.addAll([
       '/',
       '/index.html',
       '/js/vfs_ram.js',

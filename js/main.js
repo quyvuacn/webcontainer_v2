@@ -134,7 +134,12 @@ async function bootstrap() {
   initOpfsBridge('/js/opfs_worker.js')
 
   try {
-    vfs = await initWasmVfs()
+    const wasm = await initWasmVfs()
+    wasm?.write?.('vfscheck', new Uint8Array([1]))
+    const ok = wasm?.read?.('vfscheck')?.length === 1
+    if (wasm?.delete) wasm.delete('vfscheck')
+    vfs = ok ? wasm : new RamVfs(opfsWrite, opfsDelete)
+    if (!ok) console.warn('[bootstrap] WASM VFS failed self-check, using JS RamVfs')
   } catch (e) {
     console.warn('[bootstrap] WASM VFS fallback to JS:', e?.message ?? e)
     vfs = new RamVfs(opfsWrite, opfsDelete)
@@ -154,7 +159,23 @@ async function bootstrap() {
     vfs.preload(path, content)
   }
 
-  createBroadcastChannel(path => vfs?.invalidate(path))
+  const skipInvalidate = new Map()
+  if (vfs && typeof vfs.write === 'function') {
+    const orig = vfs.write.bind(vfs)
+    vfs.write = (p, c) => {
+      skipInvalidate.set(p, (skipInvalidate.get(p) || 0) + 1)
+      orig(p, c)
+    }
+  }
+  createBroadcastChannel(path => {
+    const n = skipInvalidate.get(path) || 0
+    if (n > 0) {
+      skipInvalidate.set(path, n - 1)
+      if (n === 1) skipInvalidate.delete(path)
+      return
+    }
+    vfs?.invalidate(path)
+  })
 
   const sw = await Promise.race([
     navigator.serviceWorker.ready,

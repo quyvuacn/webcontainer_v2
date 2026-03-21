@@ -46,6 +46,7 @@ async function init() {
     vfs.write('project/index.html', '<html><body><h1>Browser Node</h1><p>F5 restore từ OPFS</p></body></html>')
     vfs.write('project/hello.js', 'console.log("Hello!"); process.argv.forEach((a,i)=>console.log(i,a))')
     vfs.write('project/package.json', JSON.stringify({ name: 'demo', dependencies: { lodash: '^4.17.21' } }))
+    if (!vfs.read('project/index.html')) throw new Error('VFS write/read failed')
 
     createServer((req, res) => {
       res.setHeader('Content-Type', 'text/plain')
@@ -64,6 +65,7 @@ async function init() {
       cwd: 'project',
       user: 'user',
       spawnNode,
+      vfs,
       vfsRead: p => vfs.read(p),
       vfsWrite: (p, b) => vfs.write(p, b),
       vfsAcquireLock: p => vfs.acquireLock(p),

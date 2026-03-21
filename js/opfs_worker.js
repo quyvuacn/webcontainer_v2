@@ -28,22 +28,29 @@ function queueWrite(path, fn) {
   return next;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+function normalizePath(path) {
+  return String(path ?? "").replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\//, "");
+}
+
+function sanitizeName(name) {
+  return name.replace(/[\x00-\x1f\\/:*?"<>|]/g, "_");
+}
 
 async function getFileHandle(rootDir, path, create = false) {
-  const parts = path.split("/").filter(Boolean);
+  const parts = normalizePath(path).split("/").filter(Boolean);
+  if (!parts.length) throw new Error("Empty path");
   let dir = await rootDir;
   for (const seg of parts.slice(0, -1)) {
-    dir = await dir.getDirectoryHandle(seg, { create });
+    dir = await dir.getDirectoryHandle(sanitizeName(seg), { create });
   }
-  return dir.getFileHandle(parts.at(-1), { create });
+  return dir.getFileHandle(sanitizeName(parts.at(-1)), { create });
 }
 
 async function getDirHandle(rootDir, path, create = false) {
-  const parts = path.split("/").filter(Boolean);
+  const parts = normalizePath(path).split("/").filter(Boolean);
   let dir = await rootDir;
   for (const seg of parts) {
-    dir = await dir.getDirectoryHandle(seg, { create });
+    dir = await dir.getDirectoryHandle(sanitizeName(seg), { create });
   }
   return dir;
 }
@@ -80,15 +87,15 @@ async function handleWrite(rootDir, { path, bytes }) {
 }
 
 async function handleDelete(rootDir, { path }) {
-  const parts = path.split("/").filter(Boolean);
+  const parts = normalizePath(path).split("/").filter(Boolean);
   if (parts.length === 0) return { deleted: false };
 
   try {
     let dir = await rootDir;
     for (const seg of parts.slice(0, -1)) {
-      dir = await dir.getDirectoryHandle(seg);
+      dir = await dir.getDirectoryHandle(sanitizeName(seg));
     }
-    await dir.removeEntry(parts.at(-1), { recursive: true });
+    await dir.removeEntry(sanitizeName(parts.at(-1)), { recursive: true });
     bc.postMessage({ type: "file_changed", path });
     return { deleted: true };
   } catch {

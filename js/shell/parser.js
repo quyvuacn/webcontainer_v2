@@ -61,11 +61,39 @@ function splitByChainOperators(input) {
 export function parseCommand(line) {
   const trimmed = line.trim()
   if (!trimmed) return null
-  const tokens = tokenize(trimmed)
+  let tokens = tokenize(trimmed)
+  tokens = splitRedirectFromTokens(tokens)
   if (!tokens.length) return null
   const [cmd, ...rest] = tokens
   const { args, redirect } = extractRedirects(rest)
   return redirect !== undefined ? { cmd, args, raw: trimmed, redirect } : { cmd, args, raw: trimmed }
+}
+
+function splitRedirectFromTokens(tokens) {
+  const out = []
+  for (const t of tokens) {
+    if (t === '>' || t === '>>') {
+      out.push(t)
+      continue
+    }
+    const mEnd = t.match(/^(.*)(>>?)$/)
+    if (mEnd && mEnd[1] !== '') {
+      out.push(mEnd[1], mEnd[2])
+      continue
+    }
+    const mStart = t.match(/^(>>?)(.+)$/)
+    if (mStart) {
+      out.push(mStart[1], mStart[2])
+      continue
+    }
+    const mMid = t.match(/^(.+?)>(.+)$/)
+    if (mMid) {
+      out.push(mMid[1], '>', mMid[2])
+    } else {
+      out.push(t)
+    }
+  }
+  return out
 }
 
 function extractRedirects(tokens) {

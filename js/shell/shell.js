@@ -13,6 +13,7 @@ export class Shell {
     this.user = opts.user ?? 'user'
     this.oldPwd = null
     this.spawnNode = opts.spawnNode
+    this.vfsRaw = opts.vfs
     this.vfsRead = opts.vfsRead
     this.vfsWrite = opts.vfsWrite
     this.vfsAcquireLock = opts.vfsAcquireLock
@@ -78,12 +79,13 @@ export class Shell {
         result = await handler(rCtx)
         const outPath = Path.resolve(this.cwd, parsed.redirect.path)
         const content = chunks.join('')
-        if (parsed.redirect.append) {
-          const existing = await this.vfs.readFile(outPath, 'utf8').catch(() => '')
-          await this.vfs.writeFile(outPath, (existing || '') + content)
-        } else {
-          await this.vfs.writeFile(outPath, content)
-        }
+        const toWrite = parsed.redirect.append
+          ? (await this.vfs.readFile(outPath, 'utf8').catch(() => '')) + content
+          : content
+        const bytes = typeof toWrite === 'string' ? new TextEncoder().encode(toWrite) : toWrite
+        if (this.vfsWrite) this.vfsWrite(outPath, bytes)
+        else if (this.vfsRaw?.write) this.vfsRaw.write(outPath, bytes)
+        else await this.vfs.writeFile(outPath, toWrite)
       } else {
         result = await handler(ctx)
       }

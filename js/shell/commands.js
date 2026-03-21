@@ -76,7 +76,7 @@ export const commands = {
     }
   },
 
-  cat: async ({ args, vfs, cwd, writeln, home }) => {
+  cat: async ({ args, vfs, vfsRead, cwd, writeln, home }) => {
     if (!args.length) {
       writeln(A.red + 'cat: missing operand' + A.reset)
       return { exitCode: 1 }
@@ -84,8 +84,14 @@ export const commands = {
     let exitCode = 0
     for (const arg of args) {
       const target = resolvePath(cwd, arg, undefined, home ?? 'project')
+      const p = target.startsWith('/') ? target.slice(1) : target
       try {
-        const content = await vfs.readFile(target, 'utf8')
+        let content
+        if (vfsRead) {
+          const bytes = vfsRead(p)
+          if (bytes != null) content = typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes)
+        }
+        if (content === undefined) content = await vfs.readFile(target, 'utf8')
         writeln(typeof content === 'string' ? content : new TextDecoder().decode(content))
       } catch {
         writeln(A.red + `cat: ${target}: No such file or directory` + A.reset)
