@@ -115,8 +115,9 @@ export function createServer(handler) {
 }
 
 async function bootstrap() {
+  const reg = await navigator.serviceWorker.register('/sw.js')
   if (!crossOriginIsolated) {
-    await navigator.serviceWorker.register('/sw.js')
+    if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' })
     location.reload()
     return
   }
@@ -127,15 +128,29 @@ async function bootstrap() {
   vfs = new RamVfs(opfsWrite)
   opfsReady = true
 
-  const results = await opfsListAll()
+  let results = []
+  try {
+    results = await Promise.race([
+      opfsListAll(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('OPFS timeout')), 3000))
+    ])
+  } catch (e) {
+    console.warn('[bootstrap] opfsListAll:', e?.message ?? e)
+  }
   for (const { path, content } of results) {
     vfs.preload(path, content)
   }
 
   createBroadcastChannel(path => vfs?.invalidate(path))
 
-  const sw = await navigator.serviceWorker.ready
-  sw.active.postMessage({ type: 'VFS_READY' })
+  const sw = await Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Service Worker timeout')), 5000))
+  ]).catch(e => {
+    console.warn('[bootstrap] SW ready:', e?.message ?? e)
+    return null
+  })
+  if (sw?.active) sw.active.postMessage({ type: 'VFS_READY' })
 
   const cdnProxy = createCdnVfsProxy(getVfsRead, (p, b) => vfs?.write(p, b))
   navigator.serviceWorker.addEventListener('message', async ({ data }) => {

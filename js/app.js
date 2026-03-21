@@ -1,6 +1,6 @@
-import { Terminal } from 'xterm'
-import { FitAddon } from 'xterm-addon-fit'
-import 'xterm/css/xterm.css'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import '@xterm/xterm/css/xterm.css'
 import { bootstrap } from './main.js'
 import { spawnSync } from './child_process_browser.js'
 import { createShellVfsAdapter } from './shell/vfs_adapter.js'
@@ -9,9 +9,39 @@ import * as Path from './shell/path.js'
 
 async function init() {
   const title = document.getElementById('title')
+  const termContainer = document.getElementById('terminal')
+
+  const term = new Terminal({
+    theme: { background: '#0d1117', foreground: '#c9d1d9', cursor: '#58a6ff' },
+    fontFamily: '"Cascadia Code", "Fira Code", monospace',
+    fontSize: 14,
+    cursorBlink: true,
+    scrollback: 1000,
+    disableStdin: false,
+  })
+  const fitAddon = new FitAddon()
+  term.loadAddon(fitAddon)
+  term.open(termContainer)
+  term.writeln('\x1b[2mĐang khởi động...\x1b[0m')
+
+  function doFit() {
+    requestAnimationFrame(() => {
+      fitAddon.fit()
+      setTimeout(() => fitAddon.fit(), 100)
+    })
+  }
+  doFit()
+  window.addEventListener('resize', () => fitAddon.fit())
+
   try {
-    const { vfs, createServer } = await bootstrap()
+    const bootstrapPromise = bootstrap()
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Bootstrap timeout (5s). F5 thử lại.')), 5000)
+    )
+    const { vfs, createServer } = await Promise.race([bootstrapPromise, timeout])
     title.textContent = 'Browser Node — Virtual Shell'
+
+    term.write('\x1b[2K\x1b[1G') // clear loading line
 
     vfs.write('project/index.html', '<html><body><h1>Browser Node</h1><p>F5 restore từ OPFS</p></body></html>')
     vfs.write('project/hello.js', 'console.log("Hello!"); process.argv.forEach((a,i)=>console.log(i,a))')
@@ -21,19 +51,6 @@ async function init() {
       res.setHeader('Content-Type', 'text/plain')
       res.end(`Hello from http.createServer! Path: ${req.path}`)
     }).listen(3000)
-
-    const termContainer = document.getElementById('terminal')
-    const term = new Terminal({
-      theme: { background: '#0d1117', foreground: '#c9d1d9', cursor: '#58a6ff' },
-      fontFamily: '"Cascadia Code", "Fira Code", monospace',
-      fontSize: 14,
-      cursorBlink: true,
-      scrollback: 1000,
-    })
-    const fitAddon = new FitAddon()
-    term.loadAddon(fitAddon)
-    term.open(termContainer)
-    fitAddon.fit()
 
     const shellVfs = createShellVfsAdapter(vfs)
     const spawnNode = async (args, opts) => {
@@ -61,6 +78,7 @@ async function init() {
     term.writeln('Gõ \x1b[33mhelp\x1b[0m xem lệnh.')
     term.writeln('')
     term.write(shell.getPrompt())
+    doFit()
 
     let lineBuffer = ''
     let cursorIndex = 0
@@ -188,10 +206,14 @@ async function init() {
     }
 
     term.onData(handleData)
-    window.addEventListener('resize', () => fitAddon.fit())
+    term.focus()
+    termContainer.addEventListener('click', () => term.focus())
     window.addEventListener('focus', () => term.focus())
   } catch (e) {
+    term.writeln('\x1b[31mLỗi: ' + (e?.message ?? e) + '\x1b[0m')
+    term.writeln('Nhấn F5 để thử lại.')
     title.textContent = 'Lỗi: ' + e.message
+    term.focus()
   }
 }
 

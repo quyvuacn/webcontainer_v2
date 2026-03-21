@@ -3,7 +3,7 @@ const pending = new Map()
 
 export function initOpfsBridge(workerUrl) {
   if (opfsWorker) return
-  opfsWorker = new Worker(workerUrl)
+  opfsWorker = new Worker(workerUrl, { type: 'module' })
   opfsWorker.onmessage = ({ data }) => {
     const resolve = pending.get(data.id)
     if (resolve) {
