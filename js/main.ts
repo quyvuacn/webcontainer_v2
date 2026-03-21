@@ -1,5 +1,6 @@
 import { RamVfs } from './vfs_ram'
 import { initWasmVfs } from './vfs_wasm'
+import { preloadEsbuildWasm } from '../node/transform/esm-to-cjs'
 import { initOpfsBridge, opfsWrite, opfsDelete, opfsListAll, createBroadcastChannel } from './opfs_bridge'
 import { VFS_PREFIX } from './config'
 import { createCdnVfsProxy } from './cdn/vfs_proxy'
@@ -257,6 +258,12 @@ async function bootstrap() {
 
   ;(globalThis as { __vfsRead?: (path: string) => Uint8Array | null }).__vfsRead = getVfsRead
   ;(globalThis as { __vfsWrite?: (path: string, bytes: Uint8Array) => void }).__vfsWrite = (path, bytes) => vfs?.write(path, bytes)
+
+  try {
+    await preloadEsbuildWasm()
+  } catch (e) {
+    console.warn('[bootstrap] esbuild.wasm preload failed:', (e as Error)?.message ?? e)
+  }
 
   return { vfs, VFS_PREFIX, createServer, setupVirtualPort, registerWorkerVfsPort }
 }

@@ -215,11 +215,11 @@ export class CJSLoader {
       }
       // Override console so framework output goes to terminal
       globalThis.console = {
-        log: (...a: unknown[]) => this.process.stdout.write((a ?? []).map(String).join(' ') + '\n'),
-        error: (...a: unknown[]) => this.process.stderr.write((a ?? []).map(String).join(' ') + '\n'),
-        warn: (...a: unknown[]) => this.process.stderr.write((a ?? []).map(String).join(' ') + '\n'),
-        info: (...a: unknown[]) => this.process.stdout.write((a ?? []).map(String).join(' ') + '\n'),
-        debug: (...a: unknown[]) => this.process.stdout.write((a ?? []).map(String).join(' ') + '\n'),
+        log: (...a: unknown[]) => this.process.stdout.write((a ?? []).map(String).join(' ') + '\r\n'),
+        error: (...a: unknown[]) => this.process.stderr.write((a ?? []).map(String).join(' ') + '\r\n'),
+        warn: (...a: unknown[]) => this.process.stderr.write((a ?? []).map(String).join(' ') + '\r\n'),
+        info: (...a: unknown[]) => this.process.stdout.write((a ?? []).map(String).join(' ') + '\r\n'),
+        debug: (...a: unknown[]) => this.process.stdout.write((a ?? []).map(String).join(' ') + '\r\n'),
         trace: prevConsole.trace.bind(prevConsole),
         dir: prevConsole.dir.bind(prevConsole),
         table: prevConsole.table.bind(prevConsole),
@@ -440,7 +440,7 @@ export class CJSLoader {
 
     // Override console to use process.stdout/stderr (defensive: a may be undefined)
     const consoleOverride =
-      "const console = { log: (...a) => process.stdout.write((a??[]).map(String).join(' ') + '\\n'), error: (...a) => process.stderr.write((a??[]).map(String).join(' ') + '\\n'), warn: (...a) => process.stderr.write((a??[]).map(String).join(' ') + '\\n'), info: (...a) => process.stdout.write((a??[]).map(String).join(' ') + '\\n'), debug: (...a) => process.stdout.write((a??[]).map(String).join(' ') + '\\n') }; "
+      "const console = { log: (...a) => process.stdout.write((a??[]).map(String).join(' ') + '\\r\\n'), error: (...a) => process.stderr.write((a??[]).map(String).join(' ') + '\\r\\n'), warn: (...a) => process.stderr.write((a??[]).map(String).join(' ') + '\\r\\n'), info: (...a) => process.stdout.write((a??[]).map(String).join(' ') + '\\r\\n'), debug: (...a) => process.stdout.write((a??[]).map(String).join(' ') + '\\r\\n') }; "
     asyncCode = consoleOverride + asyncCode
 
     const module: ModuleRecord = {
