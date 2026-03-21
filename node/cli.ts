@@ -12,6 +12,7 @@ import { ModuleCache } from './module-system/cache'
 import { CJSLoader } from './module-system/cjs-loader'
 import { createBuiltinMap } from './module-system/builtins'
 import { ProcessPolyfill, ProcessExitError, type TerminalLike } from './polyfills/process'
+import { createSetupVirtualPortHook } from './polyfills/node-runtime-hooks'
 
 export interface RunNodeOptions {
   cwd?: string
@@ -89,6 +90,7 @@ export async function runNode(
   )
 
   const g = globalThis as Record<string, unknown>
+  if (!g.__setupVirtualPort) g.__setupVirtualPort = createSetupVirtualPortHook()
   const stack = (g.__wcProcessStack as ProcessPolyfill[]) ?? []
   stack.push(process)
   g.__wcProcessStack = stack
@@ -114,10 +116,20 @@ export async function runNode(
   const builtins = createBuiltinMap(vfs, process, () => process.cwd(), syncCache, fileSource)
   const loader = new CJSLoader(vfs, resolver, cache, builtins, process, syncCache, fileSource)
 
-  g.__wcActiveServerCount = 0
+  g.__wcActiveHandleCount = 0
   const exitPromise = new Promise<number>((resolve) => {
     ;(g as { __wcExitResolve?: (code: number) => void }).__wcExitResolve = resolve
   })
+  const timers = (builtins.get('node:timers') ?? builtins.get('timers')) as {
+    setTimeout?: typeof globalThis.setTimeout
+    clearTimeout?: typeof globalThis.clearTimeout
+    setInterval?: typeof globalThis.setInterval
+    clearInterval?: typeof globalThis.clearInterval
+  } | undefined
+  if (timers?.setTimeout) g.setTimeout = timers.setTimeout
+  if (timers?.clearTimeout) g.clearTimeout = timers.clearTimeout
+  if (timers?.setInterval) g.setInterval = timers.setInterval
+  if (timers?.clearInterval) g.clearInterval = timers.clearInterval
   const fsMod = builtins.get('node:fs') ?? builtins.get('fs')
   if (fsMod) g.fs = fsMod
   const pathMod = builtins.get('node:path') ?? builtins.get('path')
@@ -133,7 +145,7 @@ export async function runNode(
     }
     await ensureInit()
     await loader.run(resolvedPath, cwd)
-    if ((g.__wcActiveServerCount as number) > 0) return await exitPromise
+    if ((g.__wcActiveHandleCount as number) > 0) return await exitPromise
     return 0
   } catch (err) {
     if (err instanceof ProcessExitError) {

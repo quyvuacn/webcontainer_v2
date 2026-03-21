@@ -54,6 +54,29 @@ describe('runNode', () => {
     expect(code).toBe(1)
     expect(stderr).toContain('No such file')
   })
+
+  it('setInterval giữ process alive cho đến process.exit (sync)', async () => {
+    await vfs.mkdir('/project', { recursive: true })
+    await vfs.writeFile(
+      '/project/interval_exit.js',
+      `setInterval(() => {}, 1e9);
+process.exit(42);`,
+    )
+    const code = await runNode(['/project/interval_exit.js'], vfs, terminal(), { cwd: '/' })
+    expect(code).toBe(42)
+  }, 5000)
+
+  it('http.listen giữ process alive cho đến process.exit (sync)', async () => {
+    await vfs.mkdir('/project', { recursive: true })
+    await vfs.writeFile(
+      '/project/server_exit.js',
+      `const http = require('http');
+http.createServer(() => {}).listen(3000);
+process.exit(0);`,
+    )
+    const code = await runNode(['/project/server_exit.js'], vfs, terminal(), { cwd: '/' })
+    expect(code).toBe(0)
+  }, 5000)
 })
 
 describe('createNodeSpawner', () => {

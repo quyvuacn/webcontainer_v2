@@ -2,7 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { bootstrap } from './main'
-import { createNodeRunner, createSpawnSyncAsync, terminateCurrentNodeWorker } from './run_node'
+import { createNodeRunner, createSpawnSyncAsync, terminateWorkerInSlot, type WorkerRefSlot } from './run_node'
 import { installNodeRuntimeHooks } from '../node/polyfills/node-runtime-hooks'
 import { createVirtualFSAdapter } from '../node/vfs/core/adapter'
 import { createShellVfsAdapter } from './shell/vfs_adapter'
@@ -44,7 +44,8 @@ function createShellState(vfs: RamVfs, term: Terminal) {
   const shellVfs = createShellVfsAdapter(vfs)
   const toTerm = (t: string) => term.write(t.replace(/\r?\n/g, '\r\n'))
   const terminal = { write: toTerm, writeError: (t: string) => term.write('\x1b[31m' + t.replace(/\r?\n/g, '\r\n') + '\x1b[0m') }
-  const spawnNode = createNodeRunner(vfs, terminal)
+  const workerRefSlot: WorkerRefSlot = { current: null }
+  const spawnNode = createNodeRunner(vfs, terminal, workerRefSlot)
   const spawnSyncAsync = createSpawnSyncAsync(vfs)
   const shell = new Shell(shellVfs, toTerm, {
     cwd: 'project',
@@ -63,10 +64,11 @@ function createShellState(vfs: RamVfs, term: Terminal) {
     cursorIndex: 0,
     history: [] as string[],
     historyIdx: -1,
+    workerRefSlot,
   }
 }
 
-function wireInput(meta: { term: Terminal; shell: Shell; state: { lineBuffer: string; cursorIndex: number; history: string[]; historyIdx: number } }) {
+function wireInput(meta: { term: Terminal; shell: Shell; state: { lineBuffer: string; cursorIndex: number; history: string[]; historyIdx: number; workerRefSlot: WorkerRefSlot } }) {
   const { term, shell, state } = meta
   function redrawLine() {
     term.write('\r\x1b[K' + shell.getPrompt() + state.lineBuffer)
@@ -97,7 +99,7 @@ function wireInput(meta: { term: Terminal; shell: Shell; state: { lineBuffer: st
       term.write('^C\r\n')
       state.lineBuffer = ''
       state.cursorIndex = 0
-      if (terminateCurrentNodeWorker()) return
+      if (terminateWorkerInSlot(state.workerRefSlot)) return
       const emit = (globalThis as { __wcEmitSIGINT?: () => void }).__wcEmitSIGINT
       if (emit) emit()
       else term.write(shell.getPrompt())
@@ -257,7 +259,7 @@ async function init() {
     }).listen(3000)
 
     wrapperEl.removeChild(tempDiv)
-    const terminals: Array<{ term: Terminal; fitAddon: FitAddon; shell: Shell; state: { lineBuffer: string; cursorIndex: number; history: string[]; historyIdx: number }; tabEl: HTMLElement; panelEl: HTMLElement }> = []
+    const terminals: Array<{ term: Terminal; fitAddon: FitAddon; shell: Shell; state: { lineBuffer: string; cursorIndex: number; history: string[]; historyIdx: number; workerRefSlot: WorkerRefSlot }; tabEl: HTMLElement; panelEl: HTMLElement }> = []
     let activeIdx = 0
 
     function switchTo(idx: number) {
@@ -284,6 +286,7 @@ async function init() {
         const idx = terminals.findIndex(t => t.tabEl === tabEl)
         const wasActive = idx === activeIdx
         const newIdx = wasActive ? (idx > 0 ? idx - 1 : 0) : activeIdx > idx ? activeIdx - 1 : activeIdx
+        terminateWorkerInSlot(terminals[idx].state.workerRefSlot)
         tabEl.remove()
         terminals[idx].panelEl.remove()
         terminals.splice(idx, 1)

@@ -13,6 +13,7 @@
 
 import { RunNodeOptions } from "../cli";
 import type { VirtualFS } from "../vfs/core/vfs";
+import { addActiveHandle } from "./active-handles";
 
 export interface NodeRuntimeHooksOptions {
   /** VFS instance used by runNode and Worker scripts */
@@ -31,6 +32,21 @@ export interface NodeRuntimeHooksOptions {
 }
 
 /**
+ * Create __setupVirtualPort hook. Used by both main thread and Worker.
+ * Adds active handle so runNode blocks until released. Returns release fn for close().
+ * Optionally registers the port (main thread only — Worker has no TCP).
+ */
+export function createSetupVirtualPortHook(
+  register?: (port: number, handler: (req: unknown, res: unknown) => void) => void,
+) {
+  return (port: number, handler: (req: unknown, res: unknown) => void): (() => void) => {
+    const release = addActiveHandle();
+    register?.(port, handler);
+    return release;
+  };
+}
+
+/**
  * Install global hooks needed by Node.js polyfills.
  * Idempotent — safe to call multiple times.
  */
@@ -38,10 +54,7 @@ export function installNodeRuntimeHooks(opts: NodeRuntimeHooksOptions): void {
   const g = globalThis as Record<string, unknown>;
 
   // ── http.createServer().listen(port) ────────────────────────────────────────
-  g.__setupVirtualPort = (port: number, handler: (req: unknown, res: unknown) => void) => {
-    (g.__wcActiveServerCount as number)++;
-    opts.setupVirtualPort(port, handler);
-  };
+  g.__setupVirtualPort = createSetupVirtualPortHook(opts.setupVirtualPort);
 
   // ── child_process.spawn('node', args) ──────────────────────────────────────
   // Wrap runNode so stdout/stderr are piped to the ChildProcess EventEmitter.
@@ -94,5 +107,5 @@ export function uninstallNodeRuntimeHooks(): void {
   delete g.__setupVirtualPort;
   delete g.__runNode;
   delete g.__spawnWorkerThreadsWorker;
-  delete g.__wcActiveServerCount;
+  delete g.__wcActiveHandleCount;
 }

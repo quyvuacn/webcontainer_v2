@@ -39,8 +39,9 @@ export async function preloadEsbuildWasm(): Promise<void> {
 export async function ensureInit(): Promise<void> {
   if (initialized) return
   try {
-    const isRealNode = typeof process !== 'undefined' && typeof (process as { versions?: { node?: string } }).versions?.node === 'string'
-    if (isRealNode) { initialized = true; return }
+    const inWorker = typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope !== 'undefined'
+    const inBrowser = typeof (globalThis as { window?: unknown }).window !== 'undefined'
+    if (!inWorker && !inBrowser) { initialized = true; return }
     const g = globalThis as Record<string, unknown>
     const wasmModule = g.__wcEsbuildWasmModule as WebAssembly.Module | undefined
     await esbuild.initialize(

@@ -6,6 +6,7 @@
  * Messages to main: { type: 'message'|'error'|'exit'|'stdout'|'stderr', data }
  */
 
+import { Buffer } from 'buffer'
 import type { Stats } from '../node/vfs/core/adapter'
 import { preloadEsbuildWasm } from '../node/transform/esm-to-cjs'
 import { runNode } from '../node/cli'
@@ -101,8 +102,23 @@ function createPortVfs(port: MessagePort) {
   }
 }
 
+const pendingSpawns = new Map<number, { resolve: (code: number) => void; proc?: { stdout: { emit: (e: string, d: unknown) => void }; stderr: { emit: (e: string, d: unknown) => void } } }>()
+let spawnRequestId = 0
+
+function setupSpawnHook() {
+  const g = globalThis as Record<string, unknown>
+  g.__runNode = (args: string[], opts?: { cwd?: string; env?: Record<string, string>; __proc?: { stdout: { emit: (e: string, d: unknown) => void }; stderr: { emit: (e: string, d: unknown) => void } } }) => {
+    const rid = ++spawnRequestId
+    return new Promise<number>((resolve) => {
+      pendingSpawns.set(rid, { resolve, proc: opts?.__proc })
+      self.postMessage({ type: 'spawn', requestId: rid, args, cwd: opts?.cwd, env: opts?.env })
+    })
+  }
+}
+
 async function runInWorker(vfsPort: MessagePort, terminal: { write: (t: string) => void; writeError: (t: string) => void }, args: string[], cwd: string, env: Record<string, string>) {
   const g = globalThis as Record<string, unknown>
+  setupSpawnHook()
   if (!g.__wcEsbuildWasmModule) {
     terminal.writeError('Loading esbuild.wasm...\r\n')
     await preloadEsbuildWasm()
@@ -111,7 +127,25 @@ async function runInWorker(vfsPort: MessagePort, terminal: { write: (t: string) 
   self.postMessage({ type: 'exit', data: exitCode })
 }
 
-self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: MessagePort; filename?: string; args?: string[]; workerData?: unknown; cwd?: string; env?: Record<string, string>; threadId?: number }>) => {
+self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: MessagePort; filename?: string; args?: string[]; workerData?: unknown; cwd?: string; env?: Record<string, string>; threadId?: number; requestId?: number; exitCode?: number }>) => {
+  if (data.type === 'spawn_response') {
+    const pending = pendingSpawns.get(data.requestId ?? 0)
+    if (pending) {
+      pendingSpawns.delete(data.requestId ?? 0)
+      pending.resolve((data.exitCode as number) ?? 1)
+    }
+    return
+  }
+  if (data.type === 'spawn_stdout') {
+    const pending = pendingSpawns.get(data.requestId ?? 0)
+    if (pending?.proc) pending.proc.stdout.emit('data', Buffer.from((data as { data?: string }).data ?? '', 'utf8'))
+    return
+  }
+  if (data.type === 'spawn_stderr') {
+    const pending = pendingSpawns.get(data.requestId ?? 0)
+    if (pending?.proc) pending.proc.stderr.emit('data', Buffer.from((data as { data?: string }).data ?? '', 'utf8'))
+    return
+  }
   if (data.type === 'init') {
     const { vfsPort, filename, args, workerData, cwd = '/', env = {}, threadId = 0 } = data
     if (!vfsPort) {

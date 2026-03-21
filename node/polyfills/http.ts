@@ -10,6 +10,7 @@
 
 import EventEmitter from "eventemitter3";
 import { Buffer } from "buffer";
+import { addActiveHandle } from "./active-handles";
 
 // ── IncomingMessage ────────────────────────────────────────────────────────────
 
@@ -127,6 +128,7 @@ export class HttpServer extends EventEmitter {
   private _handler?: (req: IncomingMessage, res: ServerResponse) => void;
   private _port = 0;
   private _host = "127.0.0.1";
+  private _releaseHandle?: () => void;
   timeout = 0;
   keepAliveTimeout = 5000;
 
@@ -158,12 +160,13 @@ export class HttpServer extends EventEmitter {
       | ((
           port: number,
           handler: (req: IncomingMessage, res: ServerResponse) => void,
-        ) => void)
+        ) => (() => void) | void)
       | undefined;
 
     if (this._port > 0 && this._handler && typeof setup === "function") {
       try {
-        setup(this._port, this._handler);
+        const release = setup(this._port, this._handler);
+        if (typeof release === "function") this._releaseHandle = release;
       } catch (e) {
         console.warn(
           `[http] Virtual TCP setup for port ${this._port} failed:`,
@@ -171,6 +174,7 @@ export class HttpServer extends EventEmitter {
         );
       }
     }
+    if (this._handler && !this._releaseHandle) this._releaseHandle = addActiveHandle();
 
     queueMicrotask(() => {
       cb?.();
@@ -184,6 +188,8 @@ export class HttpServer extends EventEmitter {
   }
 
   close(cb?: (err?: Error) => void): this {
+    this._releaseHandle?.();
+    this._releaseHandle = undefined;
     queueMicrotask(() => {
       cb?.();
       this.emit("close");

@@ -92,9 +92,8 @@ function spawnNode(
       const exitCode = await runNode(scriptArgs, {
         cwd: opts.cwd,
         env: opts.env,
-        // stdout/stderr are piped back via process polyfill's terminal hooks
-        // which call __runNodeWrite / __runNodeWriteError injected below
-      });
+        __proc: proc,
+      } as SpawnOptions & { __proc?: ChildProcess });
       proc.exitCode = exitCode;
       proc.emit("close", exitCode, null);
       proc.emit("exit", exitCode, null);

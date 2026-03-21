@@ -30,6 +30,7 @@ import { createDnsPolyfill } from '../polyfills/dns'
 import { createWorkerThreadsPolyfill } from '../polyfills/worker_threads'
 import { createZlibPolyfill } from '../polyfills/zlib'
 import { createReadlinePolyfill } from '../polyfills/readline'
+import { createTimersPolyfill } from '../polyfills/timers'
 import type { ProcessPolyfill } from '../polyfills/process'
 
 export function createBuiltinMap(
@@ -106,6 +107,8 @@ export function createBuiltinMap(
     ['node:zlib', createZlibPolyfill()],
     ['readline', createReadlinePolyfill()],
     ['node:readline', createReadlinePolyfill()],
+    ['timers', createTimersPolyfill()],
+    ['node:timers', createTimersPolyfill()],
   ])
 
   return map

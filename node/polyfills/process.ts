@@ -229,6 +229,10 @@ export class ProcessPolyfill {
     return this._ee.listenerCount(event)
   }
 
+  listeners = (event: string): ((...args: unknown[]) => void)[] => {
+    return (this._ee as { listeners: (e: string) => ((...args: unknown[]) => void)[] }).listeners(event)
+  }
+
   eventNames = (): (string | symbol)[] => {
     return this._ee.eventNames()
   }
