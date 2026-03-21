@@ -1,6 +1,6 @@
 import { runNode } from '../node/cli'
 import { createVirtualFSAdapter } from '../node/vfs/core/adapter'
-import { registerWorkerVfsPort } from './main'
+import { registerWorkerVfsPort, setupVirtualPort } from './main'
 
 export type WorkerRefSlot = {
   current: { worker: Worker; resolve: (code: number) => void; children: Worker[] } | null
@@ -14,6 +14,59 @@ export function createNodeRunner(
   return async (args: string[], opts: { cwd?: string; env?: Record<string, string> } = {}): Promise<number> => {
     const { port1, port2 } = new MessageChannel()
     registerWorkerVfsPort(port1)
+
+    const { port1: tcpReg1, port2: tcpReg2 } = new MessageChannel()
+    type PortPending = Map<string, (d: { status: number; headers: [string, string][]; body: number[] }) => void>
+    const workerPortMap = new Map<number, { reqPort: MessagePort; pending: PortPending }>()
+    tcpReg1.onmessage = ({ data }: MessageEvent<{ type: string; port?: number; requestPort?: MessagePort }>) => {
+      if (data.type === 'register_virtual_port' && data.port != null && data.requestPort) {
+        const port = data.port
+        const reqPort = data.requestPort
+        const pending = new Map<string, (d: { status: number; headers: [string, string][]; body: number[] }) => void>()
+        reqPort.onmessage = ({ data: d }: MessageEvent<{ type: string; requestId?: string; status?: number; headers?: [string, string][]; body?: number[] }>) => {
+          if (d.type === 'virtual_tcp_response' && d.requestId) {
+            const cb = pending.get(d.requestId)
+            if (cb) {
+              pending.delete(d.requestId)
+              cb({ status: d.status ?? 200, headers: d.headers ?? [], body: d.body ?? [] })
+            }
+          }
+        }
+        workerPortMap.set(port, { reqPort, pending })
+        setupVirtualPort(port, (req: { method?: string; url?: string; path?: string; headers?: Record<string, string>; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown }, res: { setHeader: (k: string, v: string) => void; end: (b?: string) => void }) => {
+          const headers: [string, string][] = req.headers ? Object.entries(req.headers) : []
+          const body: number[] = []
+          const path = (req.path || '/').replace(/^\/__port__\/\d+/, '') || '/'
+          const q = (req.url || '').includes('?') ? (req.url || '').slice((req.url || '').indexOf('?')) : ''
+          const fwdUrl = path + q
+          const collect = () => {
+            const requestId = crypto.randomUUID()
+            const p = new Promise<{ status: number; headers: [string, string][]; body: number[] }>((resolve) => {
+              pending.set(requestId, resolve)
+            })
+            reqPort.postMessage({
+              type: 'virtual_tcp_request',
+              requestId,
+              method: req.method ?? 'GET',
+              url: fwdUrl,
+              headers,
+              body,
+            })
+            p.then(({ status, headers: h, body: b }) => {
+              h.forEach(([k, v]) => res.setHeader(k, v))
+              ;(res as { statusCode?: number }).statusCode = status
+              res.end(b.length ? new TextDecoder().decode(new Uint8Array(b)) : '')
+            })
+          }
+          if (req.on) {
+            req.on('data', (chunk: Uint8Array) => { body.push(...chunk) })
+            req.on('end', collect)
+          } else {
+            collect()
+          }
+        })
+      }
+    }
 
     const worker = new Worker(new URL('./worker_threads_runner.ts', import.meta.url), { type: 'module' })
     const ref = { worker, resolve: (_code: number) => {}, children: [] as Worker[] }
@@ -31,6 +84,35 @@ export function createNodeRunner(
           const requestId = data.requestId ?? 0
           const { port1: p1, port2: p2 } = new MessageChannel()
           registerWorkerVfsPort(p1)
+          const { port1: tcpRegC1, port2: tcpRegC2 } = new MessageChannel()
+          tcpRegC1.onmessage = ({ data: d }: MessageEvent<{ type: string; port?: number; requestPort?: MessagePort }>) => {
+            if (d.type === 'register_virtual_port' && d.port != null && d.requestPort) {
+              const port = d.port
+              const reqPort = d.requestPort
+              const pending = new Map<string, (d: { status: number; headers: [string, string][]; body: number[] }) => void>()
+              reqPort.onmessage = ({ data: r }: MessageEvent<{ type: string; requestId?: string; status?: number; headers?: [string, string][]; body?: number[] }>) => {
+                if (r.type === 'virtual_tcp_response' && r.requestId) {
+                  const cb = pending.get(r.requestId)
+                  if (cb) { pending.delete(r.requestId); cb({ status: r.status ?? 200, headers: r.headers ?? [], body: r.body ?? [] }) }
+                }
+              }
+              workerPortMap.set(port, { reqPort, pending })
+              setupVirtualPort(port, (req: { method?: string; url?: string; path?: string; headers?: Record<string, string>; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown }, res: { setHeader: (k: string, v: string) => void; end: (b?: string) => void }) => {
+                const headers: [string, string][] = req.headers ? Object.entries(req.headers) : []
+                const body: number[] = []
+                const path = ((req as { path?: string }).path || '/').replace(/^\/__port__\/\d+/, '') || '/'
+                const q = (req.url || '').includes('?') ? (req.url || '').slice((req.url || '').indexOf('?')) : ''
+                const fwdUrl = path + q
+                const collect = () => {
+                  const rid = crypto.randomUUID()
+                  const pr = new Promise<{ status: number; headers: [string, string][]; body: number[] }>((resolve) => { pending.set(rid, resolve) })
+                  reqPort.postMessage({ type: 'virtual_tcp_request', requestId: rid, method: req.method ?? 'GET', url: fwdUrl, headers, body })
+                  pr.then(({ status, headers: h, body: b }) => { h.forEach(([k, v]) => res.setHeader(k, v)); (res as { statusCode?: number }).statusCode = status; res.end(b.length ? new TextDecoder().decode(new Uint8Array(b)) : '') })
+                }
+                if (req.on) { req.on('data', (chunk: Uint8Array) => { body.push(...chunk) }); req.on('end', collect) } else collect()
+              })
+            }
+          }
           const child = new Worker(new URL('./worker_threads_runner.ts', import.meta.url), { type: 'module' })
           ref.children.push(child)
           child.onmessage = ({ data: d }: MessageEvent<{ type: string; data?: string | number }>) => {
@@ -51,11 +133,12 @@ export function createNodeRunner(
           }
           const wbytes = (globalThis as { __wcEsbuildWasmBytes?: ArrayBuffer }).__wcEsbuildWasmBytes
           const wcopy = wbytes?.slice(0)
-          const t: Transferable[] = [p2]
+          const t: Transferable[] = [p2, tcpRegC2]
           if (wcopy) t.push(wcopy)
           child.postMessage({
             type: 'init',
             vfsPort: p2,
+            tcpRegPort: tcpRegC2,
             args: data.args ?? [],
             cwd: data.cwd ?? opts.cwd ?? 'project',
             env: data.env ?? opts.env ?? {},
@@ -77,11 +160,12 @@ export function createNodeRunner(
       }
       const wasmBytes = (globalThis as { __wcEsbuildWasmBytes?: ArrayBuffer }).__wcEsbuildWasmBytes
       const wasmCopy = wasmBytes?.slice(0)
-      const transfer: Transferable[] = [port2]
+      const transfer: Transferable[] = [port2, tcpReg2]
       if (wasmCopy) transfer.push(wasmCopy)
       worker.postMessage({
         type: 'init',
         vfsPort: port2,
+        tcpRegPort: tcpReg2,
         args,
         cwd: opts.cwd ?? 'project',
         env: opts.env ?? {},

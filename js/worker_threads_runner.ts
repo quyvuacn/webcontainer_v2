@@ -1,12 +1,15 @@
 /**
  * Web Worker entrypoint for:
  * - worker_threads.Worker(filename)  — init: { vfsPort, filename, workerData, cwd, env, threadId }
- * - shell `node` command (Ctrl+C kill) — init: { vfsPort, args, cwd, env }
+ * - shell `node` command (Ctrl+C kill) — init: { vfsPort, tcpRegPort?, args, cwd, env }
  *
  * Messages to main: { type: 'message'|'error'|'exit'|'stdout'|'stderr', data }
+ * tcpRegPort: when Node http.createServer().listen(port) is called, we register the port with Main.
  */
 
 import { Buffer } from 'buffer'
+import { addActiveHandle } from '../node/polyfills/active-handles'
+import { IncomingMessage, ServerResponse } from '../node/polyfills/http'
 import type { Stats } from '../node/vfs/core/adapter'
 import { preloadEsbuildWasm } from '../node/transform/esm-to-cjs'
 import { runNode } from '../node/cli'
@@ -116,8 +119,53 @@ function setupSpawnHook() {
   }
 }
 
-async function runInWorker(vfsPort: MessagePort, terminal: { write: (t: string) => void; writeError: (t: string) => void }, args: string[], cwd: string, env: Record<string, string>, wasmBytes?: ArrayBuffer) {
+function setupTcpRegHook(tcpRegPort: MessagePort) {
   const g = globalThis as Record<string, unknown>
+  g.__setupVirtualPort = (port: number, handler: (req: IncomingMessage, res: ServerResponse) => void) => {
+    const release = addActiveHandle()
+    const { port1, port2 } = new MessageChannel()
+    port1.onmessage = ({ data }: MessageEvent<{ type: string; requestId?: string; method?: string; url?: string; headers?: [string, string][]; body?: number[] }>) => {
+      if (data.type !== 'virtual_tcp_request' || !data.requestId) return
+      const req = new IncomingMessage({
+        method: data.method ?? 'GET',
+        url: data.url ?? '/',
+        headers: data.headers ? Object.fromEntries(data.headers) : {},
+      })
+      const res = new ServerResponse()
+      const origEnd = res.end.bind(res)
+      res.end = function (body?: string | Uint8Array) {
+        origEnd(body)
+        const h = Object.entries(res.getHeaders()) as [string, string][]
+        const b = typeof body === 'string' ? [...new TextEncoder().encode(body)] : (body ? [...new Uint8Array(body)] : [])
+        port1.postMessage({
+          type: 'virtual_tcp_response',
+          requestId: data.requestId,
+          status: (res as { statusCode?: number }).statusCode ?? 200,
+          headers: h,
+          body: b,
+        })
+      } as typeof res.end
+      queueMicrotask(() => {
+        if (data.body?.length) {
+          req.emit('data', new Uint8Array(data.body))
+        }
+        req.emit('end')
+      })
+      try {
+        handler(req, res)
+      } catch (e) {
+        ;(res as { statusCode?: number }).statusCode = 500
+        res.end((e as Error)?.message ?? String(e))
+      }
+    }
+    tcpRegPort.postMessage({ type: 'register_virtual_port', port, requestPort: port2 }, [port2])
+    return release
+  }
+}
+
+async function runInWorker(vfsPort: MessagePort, terminal: { write: (t: string) => void; writeError: (t: string) => void }, args: string[], cwd: string, env: Record<string, string>, wasmBytes?: ArrayBuffer, tcpRegPort?: MessagePort) {
+  const g = globalThis as Record<string, unknown>
+  if (tcpRegPort) setupTcpRegHook(tcpRegPort)
   setupSpawnHook()
   if (!g.__wcEsbuildWasmModule) {
     if (wasmBytes) {
@@ -150,8 +198,8 @@ self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: Message
     return
   }
   if (data.type === 'init') {
-    const init = data as { vfsPort?: MessagePort; filename?: string; args?: string[]; workerData?: unknown; cwd?: string; env?: Record<string, string>; threadId?: number; wasmBytes?: ArrayBuffer }
-    const { vfsPort, filename, args, workerData, cwd = '/', env = {}, threadId = 0, wasmBytes } = init
+    const init = data as { vfsPort?: MessagePort; filename?: string; args?: string[]; workerData?: unknown; cwd?: string; env?: Record<string, string>; threadId?: number; wasmBytes?: ArrayBuffer; tcpRegPort?: MessagePort }
+    const { vfsPort, filename, args, workerData, cwd = '/', env = {}, threadId = 0, wasmBytes, tcpRegPort } = init
     if (!vfsPort) {
       self.postMessage({ type: 'error', data: 'init requires vfsPort' })
       self.postMessage({ type: 'exit', data: 1 })
@@ -165,7 +213,7 @@ self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: Message
 
     if (args) {
       try {
-        await runInWorker(vfsPort, terminal, args, cwd, env)
+        await runInWorker(vfsPort, terminal, args, cwd, env, wasmBytes, tcpRegPort)
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         self.postMessage({ type: 'stderr', data: msg + '\n' })

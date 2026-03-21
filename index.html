@@ -82,8 +82,72 @@
       border-radius: 4px;
     }
     .tab-add:hover { background: #21262d; color: #58a6ff; }
-    #terminal-wrapper {
+    #main-pane {
       flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    #preview-pane {
+      flex: 1;
+      min-height: 200px;
+      display: flex;
+      flex-direction: column;
+      border-bottom: 1px solid #30363d;
+    }
+    #preview-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: #161b22;
+      font-size: 12px;
+      font-family: monospace;
+      color: #8b949e;
+    }
+    #preview-bar select {
+      padding: 4px 8px;
+      background: #21262d;
+      color: #58a6ff;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #preview-bar input {
+      flex: 1;
+      min-width: 120px;
+      padding: 4px 10px;
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: monospace;
+    }
+    #preview-bar input:focus {
+      outline: none;
+      border-color: #58a6ff;
+    }
+    #preview-bar button {
+      padding: 4px 10px;
+      background: #21262d;
+      color: #58a6ff;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #preview-bar button:hover {
+      background: #30363d;
+    }
+    #preview-iframe {
+      flex: 1;
+      min-height: 150px;
+      border: none;
+      background: #0d1117;
+    }
+    #terminal-wrapper {
+      flex: 0 0 320px;
       min-height: 200px;
       padding: 12px;
       overflow: hidden;
@@ -114,7 +178,21 @@
       <span id="title">Browser Node — Virtual Shell</span>
     </div>
     <div id="tabs"></div>
-    <div id="terminal-wrapper"></div>
+    <div id="main-pane">
+      <div id="preview-pane">
+        <div id="preview-bar">
+          <span>Preview</span>
+          <select id="preview-port">
+            <option value="5173">:5173</option>
+          </select>
+          <input id="preview-url" type="text" placeholder="/" value="/" />
+          <button id="preview-reload">Reload</button>
+          <span id="preview-status" style="color:#8b949e;font-size:11px"></span>
+        </div>
+        <iframe id="preview-iframe" title="Preview"></iframe>
+      </div>
+      <div id="terminal-wrapper"></div>
+    </div>
   </div>
   <script type="module" src="/js/app.ts"></script>
 </body>

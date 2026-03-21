@@ -253,11 +253,6 @@ async function init() {
       vfs.write('project/index.html', '<html><body><h1>Browser Node</h1><p>F5 restores</p></body></html>')
     }
 
-    createServerFn((req: { path?: string; url?: string }, res: { setHeader: (k: string, v: string) => void; end: (s: string) => void }) => {
-      res.setHeader('Content-Type', 'text/plain')
-      res.end(`Hello from http.createServer! Path: ${(req as { path: string }).path}`)
-    }).listen(3000)
-
     wrapperEl.removeChild(tempDiv)
     const terminals: Array<{ term: Terminal; fitAddon: FitAddon; shell: Shell; state: { lineBuffer: string; cursorIndex: number; history: string[]; historyIdx: number; workerRefSlot: WorkerRefSlot }; tabEl: HTMLElement; panelEl: HTMLElement }> = []
     let activeIdx = 0
@@ -351,8 +346,9 @@ async function init() {
     wrapperEl.appendChild(apiTestEl)
     document.getElementById('api-test-btn')!.onclick = async () => {
       const out = document.getElementById('api-test-out')!
+      const port = (document.getElementById('preview-port') as HTMLSelectElement)?.value || '5173'
       try {
-        const r = await fetch('/__port__/3000/')
+        const r = await fetch(`/__port__/${port}/`)
         const t = await r.text()
         out.textContent = r.ok ? t : `HTTP ${r.status}\n${t}`
         out.style.color = r.ok ? '#3fb950' : '#f85149'
@@ -361,6 +357,46 @@ async function init() {
         out.style.color = '#f85149'
       }
     }
+
+    const iframe = document.getElementById('preview-iframe') as HTMLIFrameElement
+    const portSelect = document.getElementById('preview-port') as HTMLSelectElement
+    const urlInput = document.getElementById('preview-url') as HTMLInputElement
+    const reloadBtn = document.getElementById('preview-reload')!
+    const statusEl = document.getElementById('preview-status')!
+    function getPath() {
+      let p = (urlInput.value || '').trim()
+      if (!p.startsWith('/')) p = '/' + p
+      return p || '/'
+    }
+    function loadPreview() {
+      const port = portSelect.value
+      const path = getPath()
+      const url = `/__port__/${port}${path}`
+      statusEl.textContent = 'Loading...'
+      iframe.src = url
+    }
+    iframe.onload = () => {
+      statusEl.textContent = 'Ready'
+      try {
+        const loc = iframe.contentWindow?.location
+        if (loc) {
+          const m = loc.pathname.match(/^\/__port__\/\d+(.*)$/)
+          urlInput.value = (m?.[1] || '/') || '/'
+        }
+      } catch {}
+    }
+    iframe.onerror = () => {
+      statusEl.textContent = 'Error loading'
+    }
+    portSelect.onchange = () => {
+      urlInput.value = '/'
+      loadPreview()
+    }
+    urlInput.onkeydown = (e) => {
+      if (e.key === 'Enter') loadPreview()
+    }
+    reloadBtn.onclick = loadPreview
+    loadPreview()
 
     wrapperEl.addEventListener('click', () => {
       if (terminals[activeIdx]) terminals[activeIdx].term.focus()

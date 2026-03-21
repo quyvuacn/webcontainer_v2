@@ -22,14 +22,19 @@ export default defineConfig(() => {
       {
         name: 'js-to-ts-fallback',
         configureServer(server) {
-          server.middlewares.use((req: { url?: string }, _res, next) => {
+          const mw = (req: { url?: string }, res: { setHeader?: (k: string, v: string) => void }, next: () => void) => {
             const u = req.url ?? ''
             const p = u.split('?')[0] ?? ''
+            if (p === '/sw.js' && res.setHeader) {
+              res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+              res.setHeader('Pragma', 'no-cache')
+            }
             if (p.startsWith('/js/') && p.endsWith('.js') && !p.includes('node_modules')) {
               req.url = p.slice(0, -3) + '.ts' + (u.includes('?') ? u.slice(u.indexOf('?')) : '')
             }
             next()
-          })
+          }
+          server.middlewares.stack.unshift({ route: '', handle: mw } as { route: string; handle: (req: unknown, res: unknown, next: () => void) => void })
         },
       },
     ],

@@ -45,16 +45,21 @@ self.addEventListener('activate', event => {
 })
 
 async function handleJsRequest(request) {
+  const isLocalhost = new URL(request.url).hostname === 'localhost' || new URL(request.url).hostname === '127.0.0.1'
+  if (isLocalhost) {
+    try {
+      let resp = await fetch(request, { cache: 'reload' })
+      if (resp.ok) return resp
+      const url = new URL(request.url)
+      if (resp.status === 404 && url.pathname.endsWith('.js')) {
+        resp = await fetch(new URL(url.pathname.slice(0, -3) + '.ts' + url.search, url.origin), { cache: 'reload' })
+      }
+      if (resp.ok) return resp
+    } catch {}
+  }
   const cached = await caches.match(request)
   if (cached) return cached
-  let resp = await fetch(request)
-  if (resp.ok) return resp
-  const url = new URL(request.url)
-  if (resp.status === 404 && url.pathname.endsWith('.js')) {
-    const tsUrl = url.pathname.slice(0, -3) + '.ts' + url.search
-    resp = await fetch(new URL(tsUrl, url.origin))
-  }
-  return resp
+  return fetch(request)
 }
 
 self.addEventListener('message', ({ data, source }) => {
@@ -75,6 +80,8 @@ self.addEventListener('message', ({ data, source }) => {
       pendingVirtualTcp.delete(data.requestId)
       const body = data.body ? new Uint8Array(data.body) : new Uint8Array(0)
       const headers = data.headers ? Object.fromEntries(data.headers) : {}
+      headers['Cross-Origin-Opener-Policy'] = 'same-origin'
+      headers['Cross-Origin-Embedder-Policy'] = 'require-corp'
       pending.resolve(new Response(body, { status: data.status || 200, headers }))
     }
   }
@@ -95,16 +102,6 @@ self.addEventListener('fetch', event => {
     return
   }
 
-  if (event.request.destination === 'document') {
-    event.respondWith(injectIsolationHeaders(event.request))
-    return
-  }
-
-  if (url.pathname.startsWith('/__r__/')) {
-    event.respondWith(serveVfsFile(url.pathname.replace(/^\/__r__\/?/, ''), event.clientId))
-    return
-  }
-
   const portMatch = url.pathname.match(/^\/__port__\/(\d+)(\/.*|$)/)
   if (portMatch) {
     const port = parseInt(portMatch[1])
@@ -118,7 +115,24 @@ self.addEventListener('fetch', event => {
       })())
       return
     }
-    event.respondWith(new Response(`Port ${port} not registered. Registered: [${portList.join(',')}]. Open http://localhost:5173/ first.`, { status: 503 }))
+    const errMsg = `Port ${port} not registered. Registered: [${portList.join(',') || 'none'}]. Run your server in the terminal first.`
+    if (event.request.destination === 'document') {
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:20px;font-family:monospace;color:#8b949e;background:#0d1117"><pre>${errMsg}</pre></body></html>`
+      const h = { 'Content-Type': 'text/html;charset=utf-8', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' }
+      event.respondWith(new Response(html, { status: 200, headers: h }))
+    } else {
+      event.respondWith(new Response(errMsg, { status: 503 }))
+    }
+    return
+  }
+
+  if (event.request.destination === 'document') {
+    event.respondWith(injectIsolationHeaders(event.request))
+    return
+  }
+
+  if (url.pathname.startsWith('/__r__/')) {
+    event.respondWith(serveVfsFile(url.pathname.replace(/^\/__r__\/?/, ''), event.clientId))
     return
   }
 
@@ -126,7 +140,8 @@ self.addEventListener('fetch', event => {
 })
 
 async function injectIsolationHeaders(request) {
-  const resp = await fetch(request)
+  const isLocalhost = new URL(request.url).hostname === 'localhost' || new URL(request.url).hostname === '127.0.0.1'
+  const resp = await fetch(request, isLocalhost ? { cache: 'reload' } : {})
   const h = new Headers(resp.headers)
   h.set('Cross-Origin-Opener-Policy', 'same-origin')
   h.set('Cross-Origin-Embedder-Policy', 'require-corp')
