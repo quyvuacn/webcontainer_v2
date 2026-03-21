@@ -17,7 +17,8 @@ let initialized = false
 export const ESBUILD_WASM_LOCAL = '/esbuild.wasm'
 export const ESBUILD_WASM_CDN = 'https://unpkg.com/esbuild-wasm@0.27.4/esbuild.wasm'
 
-/** Preload esbuild.wasm. Prefer local (faster, no network). Fallback to CDN. */
+/** Preload esbuild.wasm. Prefer local (faster, no network). Fallback to CDN.
+ *  Stores bytes for Worker transfer. */
 export async function preloadEsbuildWasm(): Promise<void> {
   if (typeof location === 'undefined') return
   const g = globalThis as Record<string, unknown>
@@ -27,6 +28,7 @@ export async function preloadEsbuildWasm(): Promise<void> {
       const res = await fetch(url)
       if (!res.ok) continue
       const bytes = await res.arrayBuffer()
+      ;(g as { __wcEsbuildWasmBytes?: ArrayBuffer }).__wcEsbuildWasmBytes = bytes.slice(0)
       g.__wcEsbuildWasmModule = await WebAssembly.compile(bytes)
       return
     } catch {

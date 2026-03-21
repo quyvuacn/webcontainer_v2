@@ -49,13 +49,18 @@ export function createNodeRunner(
             const i = ref.children.indexOf(child)
             if (i >= 0) ref.children.splice(i, 1)
           }
+          const wbytes = (globalThis as { __wcEsbuildWasmBytes?: ArrayBuffer }).__wcEsbuildWasmBytes
+          const wcopy = wbytes?.slice(0)
+          const t: Transferable[] = [p2]
+          if (wcopy) t.push(wcopy)
           child.postMessage({
             type: 'init',
             vfsPort: p2,
             args: data.args ?? [],
             cwd: data.cwd ?? opts.cwd ?? 'project',
             env: data.env ?? opts.env ?? {},
-          }, [p2])
+            wasmBytes: wcopy,
+          }, t)
           return
         }
         if (data.type === 'stdout') terminal.write(String(data.data ?? ''))
@@ -70,13 +75,18 @@ export function createNodeRunner(
         cleanup()
         resolve(1)
       }
+      const wasmBytes = (globalThis as { __wcEsbuildWasmBytes?: ArrayBuffer }).__wcEsbuildWasmBytes
+      const wasmCopy = wasmBytes?.slice(0)
+      const transfer: Transferable[] = [port2]
+      if (wasmCopy) transfer.push(wasmCopy)
       worker.postMessage({
         type: 'init',
         vfsPort: port2,
         args,
         cwd: opts.cwd ?? 'project',
         env: opts.env ?? {},
-      }, [port2])
+        wasmBytes: wasmCopy,
+      }, transfer)
     })
   }
 }

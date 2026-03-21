@@ -139,10 +139,7 @@ export async function runNode(
   g.process = process
 
   try {
-    if (typeof location !== 'undefined' && !g.__wcEsbuildWasmModule) {
-      ;(terminal.writeError ?? terminal.write)('Loading esbuild.wasm...\r\n')
-      await preloadEsbuildWasm()
-    }
+    if (typeof location !== 'undefined' && !g.__wcEsbuildWasmModule) await preloadEsbuildWasm()
     await ensureInit()
     await loader.run(resolvedPath, cwd)
     if ((g.__wcActiveHandleCount as number) > 0) return await exitPromise

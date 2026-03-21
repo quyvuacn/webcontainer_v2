@@ -116,12 +116,15 @@ function setupSpawnHook() {
   }
 }
 
-async function runInWorker(vfsPort: MessagePort, terminal: { write: (t: string) => void; writeError: (t: string) => void }, args: string[], cwd: string, env: Record<string, string>) {
+async function runInWorker(vfsPort: MessagePort, terminal: { write: (t: string) => void; writeError: (t: string) => void }, args: string[], cwd: string, env: Record<string, string>, wasmBytes?: ArrayBuffer) {
   const g = globalThis as Record<string, unknown>
   setupSpawnHook()
   if (!g.__wcEsbuildWasmModule) {
-    terminal.writeError('Loading esbuild.wasm...\r\n')
-    await preloadEsbuildWasm()
+    if (wasmBytes) {
+      g.__wcEsbuildWasmModule = await WebAssembly.compile(wasmBytes)
+    } else {
+      await preloadEsbuildWasm()
+    }
   }
   const exitCode = await runNode(args, createPortVfs(vfsPort), terminal, { cwd, env })
   self.postMessage({ type: 'exit', data: exitCode })
@@ -147,7 +150,8 @@ self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: Message
     return
   }
   if (data.type === 'init') {
-    const { vfsPort, filename, args, workerData, cwd = '/', env = {}, threadId = 0 } = data
+    const init = data as { vfsPort?: MessagePort; filename?: string; args?: string[]; workerData?: unknown; cwd?: string; env?: Record<string, string>; threadId?: number; wasmBytes?: ArrayBuffer }
+    const { vfsPort, filename, args, workerData, cwd = '/', env = {}, threadId = 0, wasmBytes } = init
     if (!vfsPort) {
       self.postMessage({ type: 'error', data: 'init requires vfsPort' })
       self.postMessage({ type: 'exit', data: 1 })
@@ -183,7 +187,7 @@ self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: Message
 
     try {
       const resolvedPath = PathUtils.isAbsolute(filename) ? PathUtils.normalize(filename) : PathUtils.join(cwd, filename)
-      await runInWorker(vfsPort, terminal, [resolvedPath], cwd, env)
+      await runInWorker(vfsPort, terminal, [resolvedPath], cwd, env, wasmBytes)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       self.postMessage({ type: 'error', data: msg })
