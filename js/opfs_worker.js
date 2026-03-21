@@ -15,8 +15,18 @@
  *   list_all  {}                           → { files: [{path, content}] }
  */
 
-// BroadcastChannel notifies other tabs when a file changes.
 const bc = new BroadcastChannel("vfs_opfs_sync");
+
+const writeQueue = new Map();
+
+function queueWrite(path, fn) {
+  const prev = writeQueue.get(path) ?? Promise.resolve();
+  const next = prev.then(fn).finally(() => {
+    if (writeQueue.get(path) === next) writeQueue.delete(path);
+  });
+  writeQueue.set(path, next);
+  return next;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -54,22 +64,19 @@ async function walkAll(dir, prefix, results) {
 // ── Operation handlers ─────────────────────────────────────────────────────
 
 async function handleWrite(rootDir, { path, bytes }) {
-  const handle = await getFileHandle(rootDir, path, true);
-
-  // createSyncAccessHandle gives an exclusive lock — throws if another
-  // tab holds the handle open on the same file.
-  const sync = await handle.createSyncAccessHandle();
-  try {
-    sync.truncate(0);
-    sync.write(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
-    sync.flush();
-  } finally {
-    sync.close();
-  }
-
-  // Notify other tabs to invalidate their RAM cache for this path.
-  bc.postMessage({ type: "file_changed", path });
-  return {};
+  return queueWrite(path, async () => {
+    const handle = await getFileHandle(rootDir, path, true);
+    const sync = await handle.createSyncAccessHandle();
+    try {
+      sync.truncate(0);
+      sync.write(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+      sync.flush();
+    } finally {
+      sync.close();
+    }
+    bc.postMessage({ type: "file_changed", path });
+    return {};
+  });
 }
 
 async function handleDelete(rootDir, { path }) {

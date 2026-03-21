@@ -84,6 +84,44 @@ class RamVfs {
     return this.files.has(path) || this.dirs.has(path)
   }
 
+  readdir(dirPath) {
+    const prefix = (dirPath || '').replace(/\/+$/, '') + (dirPath ? '/' : '')
+    const names = new Set()
+    for (const k of this.files.keys()) {
+      if (k.startsWith(prefix)) {
+        const rest = k.slice(prefix.length)
+        const name = rest.split('/')[0]
+        if (name) names.add(name)
+      }
+    }
+    for (const d of this.dirs) {
+      if (d.startsWith(prefix) && d !== dirPath) {
+        const rest = d.slice(prefix.length)
+        const name = rest.split('/')[0]
+        if (name) names.add(name)
+      }
+    }
+    return [...names].sort()
+  }
+
+  stat(path) {
+    const entry = this.files.get(path)
+    if (entry) {
+      return { isFile: () => true, isDirectory: () => false, size: entry.content.length, mtime: new Date(entry.mtime || 0), mode: entry.mode ?? 0o644 }
+    }
+    if (this.dirs.has(path)) {
+      return { isFile: () => false, isDirectory: () => true, size: 4096, mtime: new Date(0), mode: 0o755 }
+    }
+    return null
+  }
+
+  mkdir(path) {
+    const parts = path.split('/').filter(Boolean)
+    for (let i = 1; i <= parts.length; i++) {
+      this.dirs.add(parts.slice(0, i).join('/'))
+    }
+  }
+
   preload(path, content) {
     const bytes = content instanceof Uint8Array ? content : new TextEncoder().encode(String(content))
     this.files.set(path, { content: bytes, mtime: 0, mode: 0o644 })

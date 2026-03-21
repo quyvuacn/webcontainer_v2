@@ -20,6 +20,7 @@ pub enum EventKind {
     Created,
     Modified,
     Deleted,
+    #[allow(dead_code)]
     Renamed,
 }
 

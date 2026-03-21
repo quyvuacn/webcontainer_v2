@@ -11,7 +11,6 @@
 use std::collections::{HashMap, HashSet};
 
 use js_sys::Function;
-use wasm_bindgen::prelude::*;
 
 use crate::lock::{LockId, WriteLock};
 use crate::opfs_bridge;
@@ -25,6 +24,7 @@ use crate::watcher::{EventKind, WatcherId, Watchers};
 pub struct FileEntry {
     pub content: Vec<u8>,
     pub mtime:   u64,  // ms since epoch
+    #[allow(dead_code)]
     pub mode:    u32,  // unix permission bits (best-effort stub)
 }
 

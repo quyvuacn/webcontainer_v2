@@ -1,4 +1,5 @@
 import { RamVfs } from './vfs_ram.js'
+import { initWasmVfs } from './vfs_wasm.js'
 import { initOpfsBridge, opfsWrite, opfsDelete, opfsListAll, createBroadcastChannel } from './opfs_bridge.js'
 import { VFS_PREFIX } from './config.js'
 import { createCdnVfsProxy } from './cdn/vfs_proxy.js'
@@ -131,7 +132,13 @@ async function bootstrap() {
   await acquireTabLock()
 
   initOpfsBridge('/js/opfs_worker.js')
-  vfs = new RamVfs(opfsWrite, opfsDelete)
+
+  try {
+    vfs = await initWasmVfs()
+  } catch (e) {
+    console.warn('[bootstrap] WASM VFS fallback to JS:', e?.message ?? e)
+    vfs = new RamVfs(opfsWrite, opfsDelete)
+  }
   opfsReady = true
 
   let results = []

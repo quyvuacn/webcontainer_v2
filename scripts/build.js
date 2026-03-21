@@ -11,6 +11,11 @@ const prefix = process.env.VFS_PREFIX || '_' + randomBytes(4).toString('hex') + 
 
 console.log('VFS_PREFIX:', prefix)
 
+try {
+  execSync('npm run build:vfs', { cwd: root, stdio: 'inherit' })
+} catch (e) {
+  console.warn('build:vfs skip (Rust/wasm-bindgen chưa cài):', e.message)
+}
 execSync('npm run build', { cwd: root, stdio: 'inherit', env: { ...process.env, VITE_VFS_PREFIX: prefix } })
 
 const distDir = join(root, 'dist')
