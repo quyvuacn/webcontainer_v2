@@ -232,11 +232,11 @@ function __wbg_get_imports() {
             const ret = Date.now();
             return ret;
         },
-        __wbg_opfsDelete_d0568d1b78991b89: function(arg0, arg1) {
+        __wbg_opfsDelete_1dd56c2f8e9d467a: function(arg0, arg1) {
             const ret = opfsDelete(getStringFromWasm0(arg0, arg1));
             return addHeapObject(ret);
         },
-        __wbg_opfsWrite_3ab2dd0c28c02518: function(arg0, arg1, arg2, arg3) {
+        __wbg_opfsWrite_c2799badf12199f9: function(arg0, arg1, arg2, arg3) {
             const ret = opfsWrite(getStringFromWasm0(arg0, arg1), getArrayU8FromWasm0(arg2, arg3));
             return addHeapObject(ret);
         },

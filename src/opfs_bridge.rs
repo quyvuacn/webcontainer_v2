@@ -7,26 +7,32 @@
 ///   RamVfs::write()  → opfs_write()
 ///   RamVfs::delete() → opfs_delete()
 ///   lib.rs bootstrap → opfs_list_all(), opfs_read()
+///
+/// When not targeting wasm32 (e.g. cargo test on native), these are no-ops
+/// so unit tests can run without a JS environment.
 
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(module = "/js/opfs_bridge.js")]
 extern "C" {
-    /// Write `bytes` to OPFS at `path` (fire-and-forget).
     #[wasm_bindgen(js_name = opfsWrite)]
-    pub fn opfs_write(path: &str, bytes: &[u8]) -> js_sys::Promise;
-
-    /// Delete `path` from OPFS (fire-and-forget).
+    fn opfs_write_impl(path: &str, bytes: &[u8]) -> js_sys::Promise;
     #[wasm_bindgen(js_name = opfsDelete)]
-    pub fn opfs_delete(path: &str) -> js_sys::Promise;
-
-    /// Read `path` from OPFS → Promise<Uint8Array | null>.
-    /// Only used during Phase B bootstrap.
-    #[wasm_bindgen(js_name = opfsRead)]
-    pub fn opfs_read(path: &str) -> js_sys::Promise;
-
-    /// List all files → Promise<Array<{path, content}>>.
-    /// Only used during Phase B bootstrap.
-    #[wasm_bindgen(js_name = opfsListAll)]
-    pub fn opfs_list_all() -> js_sys::Promise;
+    fn opfs_delete_impl(path: &str) -> js_sys::Promise;
 }
+
+#[cfg(target_arch = "wasm32")]
+pub fn opfs_write(path: &str, bytes: &[u8]) {
+    let _ = opfs_write_impl(path, bytes);
+}
+#[cfg(target_arch = "wasm32")]
+pub fn opfs_delete(path: &str) {
+    let _ = opfs_delete_impl(path);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn opfs_write(_path: &str, _bytes: &[u8]) {}
+#[cfg(not(target_arch = "wasm32"))]
+pub fn opfs_delete(_path: &str) {}

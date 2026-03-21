@@ -139,7 +139,7 @@ mod tests {
             id: WatcherId(0),
             watch_path: normalize(watch_path),
             recursive,
-            callback: unsafe { Function::unchecked_from_js(JsValue::NULL) },
+            callback: Function::unchecked_from_js(JsValue::NULL),
         };
         w.matches(&entry, &normalize(changed))
     }

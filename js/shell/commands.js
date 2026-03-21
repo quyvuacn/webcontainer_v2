@@ -31,7 +31,8 @@ export const commands = {
       }
       return { newCwd: oldPwd, exitCode: 0 }
     }
-    const target = resolvePath(cwd, raw, h, h)
+    let target = resolvePath(cwd, raw, h, h)
+    if (!target) target = h
     try {
       const stat = await vfs.stat(target)
       if (!stat.isDirectory()) {

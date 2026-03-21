@@ -285,8 +285,16 @@ pub fn normalize(path: &str) -> String {
     s.trim_end_matches('/').to_string()
 }
 
+#[cfg(target_arch = "wasm32")]
 fn now_ms() -> u64 {
     js_sys::Date::now() as u64
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 // ---------------------------------------------------------------------------
