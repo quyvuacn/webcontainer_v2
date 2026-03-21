@@ -10,7 +10,8 @@
     "check-env": "bash scripts/check-env.sh",
     "build:placeholder": "bash build/build-placeholder.sh",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "benchmark": "vitest run js/benchmark.test.js --reporter=verbose"
   },
   "devDependencies": {
     "vite": "^6.0.0",

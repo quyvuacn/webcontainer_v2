@@ -24,7 +24,13 @@ self.addEventListener('install', event => {
       '/js/npm/run.js',
       '/js/npm/update.js',
       '/js/cdn/resolver.js',
-      '/js/cdn/vfs_proxy.js'
+      '/js/cdn/vfs_proxy.js',
+      '/js/cjs_loader.js',
+      '/js/shell/path.js',
+      '/js/shell/parser.js',
+      '/js/shell/commands.js',
+      '/js/shell/shell.js',
+      '/js/shell/vfs_adapter.js'
     ]).then(() => {}).catch(() => {}))
   )
   self.skipWaiting()

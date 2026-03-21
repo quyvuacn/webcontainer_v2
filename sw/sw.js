@@ -9,6 +9,7 @@ self.addEventListener('install', event => {
       '/index.html',
       '/js/vfs_ram.js',
       '/js/opfs_bridge.js',
+      '/js/config.js',
       '/js/main.js',
       '/js/app.js',
       '/js/http_serialize.js',
@@ -19,8 +20,17 @@ self.addEventListener('install', event => {
       '/js/npm/semver.js',
       '/js/npm/resolver.js',
       '/js/npm/install.js',
+      '/js/npm/ci.js',
+      '/js/npm/run.js',
+      '/js/npm/update.js',
       '/js/cdn/resolver.js',
-      '/js/cdn/vfs_proxy.js'
+      '/js/cdn/vfs_proxy.js',
+      '/js/cjs_loader.js',
+      '/js/shell/path.js',
+      '/js/shell/parser.js',
+      '/js/shell/commands.js',
+      '/js/shell/shell.js',
+      '/js/shell/vfs_adapter.js'
     ]).then(() => {}).catch(() => {}))
   )
   self.skipWaiting()
@@ -110,6 +120,12 @@ function deserializeResponse(bytes) {
 }
 
 async function handleVirtualTcp(request, buf) {
+  if (request.headers.get('upgrade') === 'websocket') {
+    const { 0: client, 1: server } = new WebSocketPair()
+    bridgeWebSocket(server, buf)
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
   const ctrl = new Int32Array(buf)
   const data = new Uint8Array(buf)
   const DATA_OFF = 12
@@ -126,6 +142,44 @@ async function handleVirtualTcp(request, buf) {
   const respBytes = data.slice(DATA_OFF + reqBytes.length, DATA_OFF + reqBytes.length + respLen)
   Atomics.store(ctrl, 0, 0)
   return deserializeResponse(respBytes)
+}
+
+function bridgeWebSocket(ws, buf) {
+  const ctrl = new Int32Array(buf)
+  const data = new Uint8Array(buf)
+  const DATA_OFF = 12
+  if (ws.accept) ws.accept()
+
+  ws.addEventListener('message', ({ data: msg }) => {
+    const bytes = typeof msg === 'string' ? new TextEncoder().encode(msg) : new Uint8Array(msg)
+    const isText = typeof msg === 'string'
+    data.set(bytes, DATA_OFF)
+    Atomics.store(ctrl, 1, bytes.length)
+    Atomics.store(ctrl, 2, isText ? 0 : 1)
+    Atomics.store(ctrl, 0, 1)
+    Atomics.notify(ctrl, 0)
+  })
+
+  ws.addEventListener('close', () => {
+    Atomics.store(ctrl, 2, 2)
+    Atomics.store(ctrl, 0, 1)
+    Atomics.notify(ctrl, 0)
+  })
+
+  ;(async () => {
+    while (true) {
+      const result = Atomics.waitAsync(ctrl, 0, 0)
+      await (result.value ?? Promise.resolve())
+      if (Atomics.load(ctrl, 0) !== 2) continue
+      const len = Atomics.load(ctrl, 1)
+      const msgType = Atomics.load(ctrl, 2)
+      const bytes = data.slice(DATA_OFF, DATA_OFF + len)
+      if (msgType === 2) { ws.close(); break }
+      ws.send(msgType === 0 ? new TextDecoder().decode(bytes) : bytes)
+      Atomics.store(ctrl, 0, 0)
+      Atomics.notify(ctrl, 0)
+    }
+  })()
 }
 
 async function serveVfsFile(path, clientId) {
