@@ -4,34 +4,34 @@ const portBuffers = new Map()
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open('static-v3').then(c => c.addAll([
+    caches.open('static-v4').then(c => c.addAll([
       '/',
       '/index.html',
-      '/js/vfs_ram.js',
-      '/js/opfs_bridge.js',
-      '/js/opfs_worker.js',
-      '/js/config.js',
-      '/js/main.js',
-      '/js/app.js',
-      '/js/http_serialize.js',
-      '/js/tcp_worker.js',
-      '/js/handler_worker.js',
-      '/js/child_process_browser.js',
-      '/js/child_worker.js',
-      '/js/npm/semver.js',
-      '/js/npm/resolver.js',
-      '/js/npm/install.js',
-      '/js/npm/ci.js',
-      '/js/npm/run.js',
-      '/js/npm/update.js',
-      '/js/cdn/resolver.js',
-      '/js/cdn/vfs_proxy.js',
-      '/js/cjs_loader.js',
-      '/js/shell/path.js',
-      '/js/shell/parser.js',
-      '/js/shell/commands.js',
-      '/js/shell/shell.js',
-      '/js/shell/vfs_adapter.js'
+      '/js/vfs_ram.ts',
+      '/js/opfs_bridge.ts',
+      '/js/opfs_worker.ts',
+      '/js/config.ts',
+      '/js/main.ts',
+      '/js/app.ts',
+      '/js/http_serialize.ts',
+      '/js/tcp_worker.ts',
+      '/js/handler_worker.ts',
+      '/js/child_process_browser.ts',
+      '/js/child_worker.ts',
+      '/js/npm/semver.ts',
+      '/js/npm/resolver.ts',
+      '/js/npm/install.ts',
+      '/js/npm/ci.ts',
+      '/js/npm/run.ts',
+      '/js/npm/update.ts',
+      '/js/cdn/resolver.ts',
+      '/js/cdn/vfs_proxy.ts',
+      '/js/cjs_loader.ts',
+      '/js/shell/path.ts',
+      '/js/shell/parser.ts',
+      '/js/shell/commands.ts',
+      '/js/shell/shell.ts',
+      '/js/shell/vfs_adapter.ts'
     ]).then(() => {}).catch(() => {}))
   )
   self.skipWaiting()
@@ -64,7 +64,7 @@ self.addEventListener('message', ({ data, source }) => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url)
 
-  if (url.pathname.startsWith('/runtime/') || url.pathname === '/sw.js') {
+  if (url.pathname.startsWith('/runtime/') || url.pathname === '/sw.js' || url.pathname.startsWith('/js/')) {
     event.respondWith(caches.match(event.request).then(r => r ?? fetch(event.request)))
     return
   }
@@ -137,7 +137,8 @@ async function handleVirtualTcp(request, buf) {
   Atomics.store(ctrl, 0, 1)
   Atomics.notify(ctrl, 0)
 
-  Atomics.wait(ctrl, 0, 1)
+  const result = Atomics.waitAsync(ctrl, 0, 1)
+  await (result.value ?? Promise.resolve())
 
   const respLen = Atomics.load(ctrl, 2)
   const respBytes = data.slice(DATA_OFF + reqBytes.length, DATA_OFF + reqBytes.length + respLen)

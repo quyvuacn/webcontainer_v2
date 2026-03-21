@@ -6,6 +6,7 @@
 set -e
 NODE_SRC="${NODE_SRC:-./node-src}"
 PATCHES="./patches"
+[ ! -d "$PATCHES" ] && { echo "patches/ removed - dùng JS polyfills, build C++ deprecated"; exit 1; }
 OUT="./dist/runtime"
 mkdir -p "$OUT"
 

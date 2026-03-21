@@ -1,0 +1,5 @@
+export type { FileSource } from './types'
+export { VFSFileSource } from './vfs'
+export { HybridFileSource } from './hybrid'
+export { parseNodeModulesPath, isNodeModulesPath } from './parse-path'
+export type { NodeModulesPath } from './parse-path'
