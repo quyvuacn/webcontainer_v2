@@ -345,6 +345,23 @@ async function init() {
 
     addTerminal(true)
 
+    const apiTestEl = document.createElement('div')
+    apiTestEl.style.cssText = 'padding:8px 12px;background:#161b22;border-top:1px solid #30363d;font-size:12px;font-family:monospace'
+    apiTestEl.innerHTML = '<span style="color:#8b949e">Test API: </span><button id="api-test-btn" style="padding:4px 10px;background:#21262d;color:#58a6ff;border:1px solid #30363d;border-radius:4px;cursor:pointer">GET /</button><pre id="api-test-out" style="margin-top:4px;color:#c9d1d9;white-space:pre-wrap"></pre>'
+    wrapperEl.appendChild(apiTestEl)
+    document.getElementById('api-test-btn')!.onclick = async () => {
+      const out = document.getElementById('api-test-out')!
+      try {
+        const r = await fetch('/__port__/3000/')
+        const t = await r.text()
+        out.textContent = r.ok ? t : `HTTP ${r.status}\n${t}`
+        out.style.color = r.ok ? '#3fb950' : '#f85149'
+      } catch (e) {
+        out.textContent = (e as Error).message
+        out.style.color = '#f85149'
+      }
+    }
+
     wrapperEl.addEventListener('click', () => {
       if (terminals[activeIdx]) terminals[activeIdx].term.focus()
     })

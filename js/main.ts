@@ -4,10 +4,10 @@ import { preloadEsbuildWasm } from '../node/transform/esm-to-cjs'
 import { initOpfsBridge, opfsWrite, opfsDelete, opfsListAll, createBroadcastChannel } from './opfs_bridge'
 import { VFS_PREFIX } from './config'
 import { createCdnVfsProxy } from './cdn/vfs_proxy'
-const SAB_SIZE = 4 * 1024 * 1024
 
 let vfs: { read: (p: string) => Uint8Array | null; write: (p: string, c: Uint8Array | string) => void; acquireLock?: (p: string) => number; releaseLock?: (id: number) => void; delete?: (p: string) => boolean; invalidate?: (p: string) => void; preload?: (p: string, c: Uint8Array) => void } | null = null
 const portHandlers = new Map<number, (req: unknown, res: unknown) => void>()
+let controllerchangeAttached = false
 
 function acquireTabLock(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -107,48 +107,21 @@ export function getVfsRead(path: string) {
   return vfs ? vfs.read(p) : null
 }
 
+function reRegisterPorts() {
+  for (const port of portHandlers.keys()) {
+    navigator.serviceWorker.controller?.postMessage({ type: 'register_port', port })
+  }
+}
+
 export function setupVirtualPort(port: number, handler: (req: unknown, res: unknown) => void) {
   portHandlers.set(port, handler)
-  const swSab = new SharedArrayBuffer(SAB_SIZE)
-  const handSab = new SharedArrayBuffer(SAB_SIZE)
-  const { port1, port2 } = new MessageChannel()
-
-  port1.onmessage = ({ data }: MessageEvent<{ type: string; port?: number; request?: unknown }>) => {
-    if (data.type === 'handle_request') {
-      const cb = portHandlers.get(data.port ?? 0)
-      const res = {
-        statusCode: 200,
-        _headers: {} as Record<string, string>,
-        _done: false,
-        setHeader(k: string, v: string) { this._headers[k] = v },
-        end(body = '') {
-          if (this._done) return
-          this._done = true
-          port1.postMessage({
-            type: 'handler_response',
-            response: { status: this.statusCode || 200, headers: this._headers, body }
-          })
-        }
-      }
-      try {
-        if (cb) cb(data.request!, res)
-        else res.end('No handler')
-      } catch (e) {
-        res.statusCode = 500
-        res.end(String(e))
-      }
-    }
+  const post = () => navigator.serviceWorker.controller?.postMessage({ type: 'register_port', port })
+  if (navigator.serviceWorker.controller) post()
+  else navigator.serviceWorker.ready.then(post)
+  if (!controllerchangeAttached) {
+    controllerchangeAttached = true
+    navigator.serviceWorker.addEventListener('controllerchange', reRegisterPorts)
   }
-
-  const tcpWorker = new Worker('/js/tcp_worker.ts', { type: 'module' })
-  tcpWorker.postMessage({ sw_sab: swSab, hand_sab: handSab })
-
-  const handlerWorker = new Worker('/js/handler_worker.ts', { type: 'module' })
-  handlerWorker.postMessage({ hand_sab: handSab, mainPort: port2, port: port }, [port2])
-
-  handlerWorker.postMessage({ type: 'run' })
-
-  navigator.serviceWorker.controller?.postMessage({ type: 'register_port', port, buffer: swSab })
 }
 
 export function createServer(handler: (req: unknown, res: unknown) => void) {
@@ -164,11 +137,13 @@ export function createServer(handler: (req: unknown, res: unknown) => void) {
 }
 
 async function bootstrap() {
+  const registrations = await navigator.serviceWorker.getRegistrations()
+  for (const r of registrations) await r.unregister()
   const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
-  await reg.update()
+  await navigator.serviceWorker.ready
   if (reg.waiting) {
     reg.waiting.postMessage({ type: 'SKIP_WAITING' })
-    reg.addEventListener('controllerchange', () => location.reload(), { once: true })
+    navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true })
   }
   if (!crossOriginIsolated) {
     if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' })
@@ -248,11 +223,57 @@ async function bootstrap() {
   if (sw?.active) sw.active.postMessage({ type: 'VFS_READY' })
 
   const cdnProxy = createCdnVfsProxy(getVfsRead, (p, b) => vfs?.write(p, b))
-  navigator.serviceWorker.addEventListener('message', async ({ data }: MessageEvent<{ type: string; path?: string; requestId?: string }>) => {
+  navigator.serviceWorker.addEventListener('message', async ({ data }: MessageEvent<{ type: string; path?: string; requestId?: string; port?: number; method?: string; url?: string; headers?: [string, string][]; body?: number[] }>) => {
     if (data.type === 'vfs_request') {
       let bytes = getVfsRead(data.path!)
       if (!bytes) bytes = await cdnProxy.read(data.path!)
       navigator.serviceWorker.controller?.postMessage({ type: 'vfs_response', requestId: data.requestId, bytes: bytes ? [...bytes] : null })
+    }
+    if (data.type === 'virtual_tcp_request') {
+      const { requestId, port: p, method, url, headers, body } = data
+      const cb = portHandlers.get(p ?? 0)
+      const fullUrl = url ?? 'http://localhost/'
+      const req = {
+        method: method ?? 'GET',
+        url: fullUrl,
+        headers: headers ? Object.fromEntries(headers) : {},
+        path: ''
+      } as { method: string; url: string; path: string; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown; emit?: (ev: string, chunk?: unknown) => unknown }
+      try {
+        const u = new URL(fullUrl, 'http://localhost')
+        req.path = (u.pathname.replace(/^\/__port__\/\d+/, '') || '/')
+      } catch {}
+      if (body?.length) {
+        const listeners: Record<string, ((chunk?: unknown) => void)[]> = {}
+        req.on = (ev: string, fn: (chunk?: unknown) => void) => { (listeners[ev] ??= []).push(fn); return req }
+        req.emit = (ev: string, chunk?: unknown) => { (listeners[ev] ?? []).forEach(f => f(chunk)); return req }
+        queueMicrotask(() => { req.emit!('data', new Uint8Array(body)); req.emit!('end') })
+      }
+      const res = {
+        statusCode: 200,
+        _headers: {} as Record<string, string>,
+        _done: false,
+        setHeader(k: string, v: string) { this._headers[k] = v },
+        end(body = '') {
+          if (this._done) return
+          this._done = true
+          const h = Object.entries(this._headers)
+          navigator.serviceWorker.controller?.postMessage({
+            type: 'virtual_tcp_response',
+            requestId,
+            status: this.statusCode || 200,
+            headers: h,
+            body: typeof body === 'string' ? [...new TextEncoder().encode(body)] : []
+          })
+        }
+      }
+      try {
+        if (cb) cb(req, res)
+        else res.end('No handler')
+      } catch (e) {
+        res.statusCode = 500
+        res.end((e as Error)?.message ?? String(e))
+      }
     }
   })
 
