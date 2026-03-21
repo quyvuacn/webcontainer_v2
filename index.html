@@ -42,14 +42,64 @@
       font-family: 'Cascadia Code', 'Fira Code', monospace;
       font-size: 13px;
     }
+    #tabs {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 0 12px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      min-height: 36px;
+      flex-shrink: 0;
+    }
+    .tab {
+      padding: 6px 12px;
+      color: #8b949e;
+      font-size: 12px;
+      font-family: monospace;
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tab:hover { background: #21262d; color: #c9d1d9; }
+    .tab.active { background: #0d1117; color: #58a6ff; border-bottom: 2px solid #0d1117; margin-bottom: -1px; }
+    .tab-close {
+      padding: 0 4px;
+      opacity: 0.6;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .tab-close:hover { opacity: 1; color: #f85149; }
+    .tab-add {
+      padding: 4px 10px;
+      color: #8b949e;
+      font-size: 16px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .tab-add:hover { background: #21262d; color: #58a6ff; }
     #terminal-wrapper {
       flex: 1;
       min-height: 200px;
       padding: 12px;
       overflow: hidden;
       display: flex;
+      flex-direction: column;
     }
-    #terminal {
+    .terminal-panel {
+      flex: 1;
+      min-height: 0;
+      display: none;
+    }
+    .terminal-panel.active {
+      display: flex;
+      flex-direction: column;
+    }
+    .terminal-panel .terminal-el {
       flex: 1;
       min-height: 0;
     }
@@ -63,9 +113,8 @@
       <div class="dot dot-green"></div>
       <span id="title">Browser Node — Virtual Shell</span>
     </div>
-    <div id="terminal-wrapper">
-      <div id="terminal"></div>
-    </div>
+    <div id="tabs"></div>
+    <div id="terminal-wrapper"></div>
   </div>
   <script type="module" src="/js/app.js"></script>
 </body>
