@@ -16,6 +16,7 @@ self.addEventListener('install', event => {
       '/js/http_serialize.ts',
       '/js/tcp_worker.ts',
       '/js/handler_worker.ts',
+      '/js/worker_threads_runner.ts',
       '/js/child_process_browser.ts',
       '/js/child_worker.ts',
       '/js/npm/semver.ts',
@@ -41,6 +42,19 @@ self.addEventListener('activate', event => {
   event.waitUntil(self.clients.claim())
 })
 
+async function handleJsRequest(request) {
+  const cached = await caches.match(request)
+  if (cached) return cached
+  let resp = await fetch(request)
+  if (resp.ok) return resp
+  const url = new URL(request.url)
+  if (resp.status === 404 && url.pathname.endsWith('.js')) {
+    const tsUrl = url.pathname.slice(0, -3) + '.ts' + url.search
+    resp = await fetch(new URL(tsUrl, url.origin))
+  }
+  return resp
+}
+
 self.addEventListener('message', ({ data, source }) => {
   if (data.type === 'SKIP_WAITING') {
     self.skipWaiting()
@@ -65,7 +79,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(event.request.url)
 
   if (url.pathname.startsWith('/runtime/') || url.pathname === '/sw.js' || url.pathname.startsWith('/js/')) {
-    event.respondWith(caches.match(event.request).then(r => r ?? fetch(event.request)))
+    event.respondWith(handleJsRequest(event.request))
     return
   }
 

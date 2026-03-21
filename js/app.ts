@@ -3,6 +3,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { bootstrap } from './main'
 import { createNodeRunner, createSpawnSyncAsync } from './run_node'
+import { installNodeRuntimeHooks } from '../node/polyfills/node-runtime-hooks'
+import { createVirtualFSAdapter } from '../node/vfs/core/adapter'
 import { createShellVfsAdapter } from './shell/vfs_adapter'
 import { Shell } from './shell/shell'
 import * as Path from './shell/path'
@@ -281,6 +283,15 @@ async function init() {
 
       const { term: t, fitAddon: fa } = createTerminal(containerEl, writeWelcome)
       const state = createShellState(vfs, t)
+      if (terminals.length === 0 && boot.registerWorkerVfsPort) {
+        installNodeRuntimeHooks({
+          vfs: createVirtualFSAdapter(vfs),
+          setupVirtualPort: boot.setupVirtualPort,
+          runNode: state.shell.spawnNode!,
+          registerWorkerVfsPort: boot.registerWorkerVfsPort,
+          workerThreadsWorkerUrl: '/js/worker_threads_runner.ts',
+        })
+      }
       wireInput({ term: t, shell: state.shell, state })
       if (writeWelcome) {
         t.write(state.shell.getPrompt())

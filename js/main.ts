@@ -6,7 +6,7 @@ import { createCdnVfsProxy } from './cdn/vfs_proxy'
 const SAB_SIZE = 4 * 1024 * 1024
 
 let vfs: { read: (p: string) => Uint8Array | null; write: (p: string, c: Uint8Array | string) => void; acquireLock?: (p: string) => number; releaseLock?: (id: number) => void; delete?: (p: string) => boolean; invalidate?: (p: string) => void; preload?: (p: string, c: Uint8Array) => void } | null = null
-const portHandlers = new Map<MessagePort, (req: unknown, res: unknown) => void>()
+const portHandlers = new Map<number, (req: unknown, res: unknown) => void>()
 
 function acquireTabLock(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -21,34 +21,76 @@ function acquireTabLock(): Promise<void> {
   })
 }
 
+type VfsPortMsg = {
+  op: string
+  id?: string
+  path?: string
+  bytes?: number[]
+  prefix?: string
+  lockId?: number
+}
+
 function handleVfsPort(port: MessagePort) {
-  port.onmessage = async ({ data }: MessageEvent<{ op: string; id?: string; path?: string; bytes?: number[]; prefix?: string; lockId?: number }>) => {
+  const v = vfs as {
+    read: (p: string) => Uint8Array | null
+    write: (p: string, c: Uint8Array) => void
+    acquireLock?: (p: string) => number
+    releaseLock?: (id: number) => void
+    delete?: (p: string) => boolean
+    exists?: (p: string) => boolean
+    readdir?: (p: string) => string[] | Promise<string[]>
+    stat?: (p: string) => { isFile: () => boolean; isDirectory: () => boolean; size?: number; mtime?: Date } | null
+    mkdir?: (p: string) => void
+  } | null
+  port.onmessage = async ({ data }: MessageEvent<VfsPortMsg>) => {
+    const path = (data.path ?? '').replace(/^\/+/, '')
     switch (data.op) {
       case 'read': {
-        const path = data.path?.replace(/^\/+/, '') || ''
-        const bytes = vfs!.read(path)
+        const bytes = v!.read(path)
         port.postMessage({ id: data.id, bytes: bytes ? [...bytes] : null })
         break
       }
       case 'write': {
-        vfs!.write(data.path?.replace(/^\/+/, '') || '', new Uint8Array(data.bytes || []))
+        v!.write(path, new Uint8Array(data.bytes || []))
         port.postMessage({ id: data.id })
         break
       }
       case 'acquire_lock': {
-        const lockId = vfs!.acquireLock?.(data.prefix || '') ?? 0
+        const lockId = v!.acquireLock?.(data.prefix ?? '') ?? 0
         port.postMessage({ id: data.id, lockId })
         break
       }
       case 'release_lock': {
-        vfs!.releaseLock?.(data.lockId!)
+        v!.releaseLock?.(data.lockId!)
         port.postMessage({ id: data.id })
         break
       }
       case 'delete': {
-        const path = data.path?.replace(/^\/+/, '') || ''
-        const ok = vfs!.delete ? vfs!.delete(path) : false
+        const ok = v!.delete?.(path) ?? false
         port.postMessage({ id: data.id, ok })
+        break
+      }
+      case 'exists': {
+        const ok = v!.exists?.(path) ?? (v!.read(path) !== null)
+        port.postMessage({ id: data.id, ok })
+        break
+      }
+      case 'readdir': {
+        const names = v!.readdir ? await Promise.resolve(v!.readdir(path)) : []
+        port.postMessage({ id: data.id, names })
+        break
+      }
+      case 'stat': {
+        const st = v!.stat?.(path)
+        port.postMessage({
+          id: data.id,
+          stat: st ? { isFile: st.isFile(), isDirectory: st.isDirectory(), size: st.size ?? 0, mtime: (st.mtime as Date)?.getTime?.() ?? 0 } : null,
+        })
+        break
+      }
+      case 'mkdir': {
+        v!.mkdir?.(path)
+        port.postMessage({ id: data.id })
         break
       }
     }
@@ -64,15 +106,15 @@ export function getVfsRead(path: string) {
   return vfs ? vfs.read(p) : null
 }
 
-export function setupVirtualPort(port: MessagePort, handler: (req: unknown, res: unknown) => void) {
+export function setupVirtualPort(port: number, handler: (req: unknown, res: unknown) => void) {
   portHandlers.set(port, handler)
   const swSab = new SharedArrayBuffer(SAB_SIZE)
   const handSab = new SharedArrayBuffer(SAB_SIZE)
   const { port1, port2 } = new MessageChannel()
 
-  port1.onmessage = ({ data }: MessageEvent<{ type: string; port?: MessagePort; request?: unknown }>) => {
+  port1.onmessage = ({ data }: MessageEvent<{ type: string; port?: number; request?: unknown }>) => {
     if (data.type === 'handle_request') {
-      const cb = portHandlers.get(data.port!)
+      const cb = portHandlers.get(data.port ?? 0)
       const res = {
         statusCode: 200,
         _headers: {} as Record<string, string>,
@@ -101,7 +143,7 @@ export function setupVirtualPort(port: MessagePort, handler: (req: unknown, res:
   tcpWorker.postMessage({ sw_sab: swSab, hand_sab: handSab })
 
   const handlerWorker = new Worker('/js/handler_worker.ts', { type: 'module' })
-  handlerWorker.postMessage({ hand_sab: handSab, mainPort: port2, port }, [port2])
+  handlerWorker.postMessage({ hand_sab: handSab, mainPort: port2, port: port }, [port2])
 
   handlerWorker.postMessage({ type: 'run' })
 
@@ -216,7 +258,7 @@ async function bootstrap() {
   ;(globalThis as { __vfsRead?: (path: string) => Uint8Array | null }).__vfsRead = getVfsRead
   ;(globalThis as { __vfsWrite?: (path: string, bytes: Uint8Array) => void }).__vfsWrite = (path, bytes) => vfs?.write(path, bytes)
 
-  return { vfs, VFS_PREFIX, createServer, setupVirtualPort }
+  return { vfs, VFS_PREFIX, createServer, setupVirtualPort, registerWorkerVfsPort }
 }
 
 export { bootstrap, RamVfs }
