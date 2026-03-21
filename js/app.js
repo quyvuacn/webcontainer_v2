@@ -22,7 +22,7 @@ async function init() {
   const fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   term.open(termContainer)
-  term.writeln('\x1b[2mĐang khởi động...\x1b[0m')
+  term.writeln('\x1b[2mStarting...\x1b[0m')
 
   function doFit() {
     requestAnimationFrame(() => {
@@ -36,14 +36,14 @@ async function init() {
   try {
     const bootstrapPromise = bootstrap()
     const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Bootstrap timeout (5s). F5 thử lại.')), 5000)
+      setTimeout(() => reject(new Error('Bootstrap timeout (5s). Try F5 to retry.')), 5000)
     )
     const { vfs, createServer } = await Promise.race([bootstrapPromise, timeout])
     title.textContent = 'Browser Node — Virtual Shell'
 
     term.write('\x1b[2K\x1b[1G') // clear loading line
 
-    vfs.write('project/index.html', '<html><body><h1>Browser Node</h1><p>F5 restore từ OPFS</p></body></html>')
+    vfs.write('project/index.html', '<html><body><h1>Browser Node</h1><p>F5 restores from OPFS</p></body></html>')
     vfs.write('project/hello.js', 'console.log("Hello!"); process.argv.forEach((a,i)=>console.log(i,a))')
     vfs.write('project/package.json', JSON.stringify({ name: 'demo', dependencies: { lodash: '^4.17.21' } }))
     if (!vfs.read('project/index.html')) throw new Error('VFS write/read failed')
@@ -77,7 +77,7 @@ async function init() {
     term.writeln('\x1b[1;34m║   \x1b[2mVirtual FS in browser\x1b[1;34m                 ║\x1b[0m')
     term.writeln('\x1b[1;34m╚═══════════════════════════════════════╝\x1b[0m')
     term.writeln('')
-    term.writeln('Gõ \x1b[33mhelp\x1b[0m xem lệnh.')
+    term.writeln('Type \x1b[33mhelp\x1b[0m for commands.')
     term.writeln('')
     term.write(shell.getPrompt())
     doFit()
@@ -212,9 +212,9 @@ async function init() {
     termContainer.addEventListener('click', () => term.focus())
     window.addEventListener('focus', () => term.focus())
   } catch (e) {
-    term.writeln('\x1b[31mLỗi: ' + (e?.message ?? e) + '\x1b[0m')
-    term.writeln('Nhấn F5 để thử lại.')
-    title.textContent = 'Lỗi: ' + e.message
+    term.writeln('\x1b[31mError: ' + (e?.message ?? e) + '\x1b[0m')
+    term.writeln('Press F5 to retry.')
+    title.textContent = 'Error: ' + e.message
     term.focus()
   }
 }

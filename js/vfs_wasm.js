@@ -1,6 +1,6 @@
 /**
- * WasmVfsAdapter — wrap WASM VFS exports thành interface giống RamVfs.
- * Dùng khi /runtime/vfs_ram.js load thành công.
+ * WasmVfsAdapter — wrap WASM VFS exports to RamVfs-like interface.
+ * Used when /runtime/vfs_ram.js loads successfully.
  */
 
 export function createWasmVfsAdapter(wasm) {

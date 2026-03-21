@@ -10,7 +10,7 @@ describe('serializeRequest + deserializeRequest', () => {
     expect(out.url).toBe('http://test.com/foo')
     expect(out.body.byteLength).toBe(0)
   })
-  it('roundtrip POST với body', async () => {
+  it('roundtrip POST with body', async () => {
     const req = new Request('http://test.com/bar', {
       method: 'POST',
       body: 'hello',

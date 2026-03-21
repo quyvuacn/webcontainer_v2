@@ -14,7 +14,7 @@ console.log('VFS_PREFIX:', prefix)
 try {
   execSync('npm run build:vfs', { cwd: root, stdio: 'inherit' })
 } catch (e) {
-  console.warn('build:vfs skip (Rust/wasm-bindgen chưa cài):', e.message)
+  console.warn('build:vfs skip (Rust/wasm-bindgen not installed):', e.message)
 }
 execSync('npm run build', { cwd: root, stdio: 'inherit', env: { ...process.env, VITE_VFS_PREFIX: prefix } })
 
@@ -41,8 +41,8 @@ if (process.argv.includes('--obfuscate')) {
     }
     console.log('Obfuscation done')
   } catch (e) {
-    console.warn('Obfuscation skip (npm i -D javascript-obfuscator):', e.message)
+    console.warn('Obfuscation skipped (npm i -D javascript-obfuscator):', e.message)
   }
 }
 
-console.log('Build xong:', distDir)
+console.log('Build complete:', distDir)

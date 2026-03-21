@@ -19,7 +19,7 @@ describe('RamVfs', () => {
     expect(vfs.exists('dir')).toBe(true)
     expect(vfs.exists('missing')).toBe(false)
   })
-  it('preload không emit', () => {
+  it('preload does not emit', () => {
     const vfs = new RamVfs(null)
     const events = []
     vfs.watch('project', true, ev => events.push(ev))

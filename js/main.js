@@ -6,7 +6,6 @@ import { createCdnVfsProxy } from './cdn/vfs_proxy.js'
 const SAB_SIZE = 4 * 1024 * 1024
 
 let vfs = null
-let opfsReady = false
 const portHandlers = new Map()
 
 function acquireTabLock() {
@@ -144,8 +143,6 @@ async function bootstrap() {
     console.warn('[bootstrap] WASM VFS fallback to JS:', e?.message ?? e)
     vfs = new RamVfs(opfsWrite, opfsDelete)
   }
-  opfsReady = true
-
   let results = []
   try {
     results = await Promise.race([

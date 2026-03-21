@@ -24,13 +24,13 @@ describe('npmInstall', () => {
     vfsReleaseLock = vi.fn()
   })
 
-  it('throw khi không có package.json', async () => {
+  it('throws when no package.json', async () => {
     vfsRead.mockReturnValue(null)
     await expect(npmInstall(vfsRead, vfsWrite, vfsAcquireLock, vfsReleaseLock))
       .rejects.toThrow('No package.json')
   })
 
-  it('return added 0 khi không có deps', async () => {
+  it('return added 0 when no deps', async () => {
     vfsRead.mockReturnValue(new TextEncoder().encode(JSON.stringify({})))
     const r = await npmInstall(vfsRead, vfsWrite, vfsAcquireLock, vfsReleaseLock, 'project', vi.fn().mockResolvedValue({ packages: {}, lockfileVersion: 3 }))
     expect(r.added).toBe(0)
@@ -48,7 +48,7 @@ describe('npmInstall', () => {
     expect(vfsWrite).toHaveBeenCalledWith('project/package-lock.json', expect.anything())
   })
 
-  it('dùng pkgPath tùy chỉnh', async () => {
+  it('use custom pkgPath', async () => {
     vfsRead.mockImplementation((path) => {
       if (path === 'custom/package.json') return new TextEncoder().encode(JSON.stringify({ dependencies: { x: '1' } }))
       return null

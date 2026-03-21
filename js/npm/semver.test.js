@@ -8,10 +8,10 @@ describe('parseVersion', () => {
   it('parse 0.0.1', () => {
     expect(parseVersion('0.0.1')).toEqual({ major: 0, minor: 0, patch: 1, pre: '' })
   })
-  it('parse với pre', () => {
+  it('parse with pre', () => {
     expect(parseVersion('1.0.0-beta.1')).toEqual({ major: 1, minor: 0, patch: 0, pre: 'beta.1' })
   })
-  it('invalid trả null', () => {
+  it('invalid returns null', () => {
     expect(parseVersion('abc')).toBeNull()
     expect(parseVersion('1.2')).toBeNull()
   })
@@ -35,7 +35,7 @@ describe('parseRange', () => {
 })
 
 describe('satisfies', () => {
-  it('any luôn true', () => {
+  it('any always true', () => {
     expect(satisfies('1.0.0', { type: 'any' })).toBe(true)
     expect(satisfies('9.9.9', { type: 'any' })).toBe(true)
   })

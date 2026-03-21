@@ -14,14 +14,14 @@ describe('sab_buffer', () => {
     writeToBuffer(buf, 'c')
     expect(readBuffer(buf)).toBe('abc')
   })
-  it('readBuffer chỉ đọc, không thay đổi buffer', () => {
+  it('readBuffer only reads, does not mutate buffer', () => {
     const buf = createBuffer(1024)
     writeToBuffer(buf, 'x')
     expect(readBuffer(buf)).toBe('x')
     writeToBuffer(buf, 'y')
     expect(readBuffer(buf)).toBe('xy')
   })
-  it('writeToBuffer với Uint8Array', () => {
+  it('writeToBuffer with Uint8Array', () => {
     const buf = createBuffer(1024)
     writeToBuffer(buf, new Uint8Array([65, 66, 67]))
     expect(readBuffer(buf)).toBe('ABC')

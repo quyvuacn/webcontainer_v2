@@ -2,12 +2,12 @@ import { describe, it, expect, vi } from 'vitest'
 import { npmCi } from './ci.js'
 
 describe('npmCi', () => {
-  it('throw khi không có lockfile', async () => {
+  it('throws when no lockfile', async () => {
     const vfsRead = vi.fn(() => null)
     await expect(npmCi(vfsRead, vi.fn(), vi.fn(), vi.fn())).rejects.toThrow('Missing package-lock.json')
   })
 
-  it('throw khi không có package.json', async () => {
+  it('throws when no package.json', async () => {
     const vfsRead = vi.fn((path) => {
       if (path === 'project/package-lock.json') return new TextEncoder().encode('{"packages":{}}')
       return null
@@ -15,7 +15,7 @@ describe('npmCi', () => {
     await expect(npmCi(vfsRead, vi.fn(), vi.fn(), vi.fn())).rejects.toThrow('No package.json')
   })
 
-  it('install stubs từ lockfile', async () => {
+  it('install stubs from lockfile', async () => {
     const written = {}
     const vfsRead = vi.fn((path) => {
       if (path === 'project/package.json') return new TextEncoder().encode(JSON.stringify({ dependencies: { pkg: '^1.0.0' } }))
