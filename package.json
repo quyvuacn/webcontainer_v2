@@ -1,0 +1,19 @@
+{
+  "name": "browser-node",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:prod": "node scripts/build.js",
+    "build:obfuscate": "node scripts/build.js --obfuscate",
+    "check-env": "bash scripts/check-env.sh",
+    "build:placeholder": "bash build/build-placeholder.sh",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "vitest": "^2.0.0"
+  }
+}
