@@ -26,8 +26,7 @@ webcontainer_v2/
 │   ├── vfs/                # VFS adapter
 │   │   ├── core/           # path, adapter, vfs, inode
 │   │   └── test-memory.ts
-│   ├── pkg-json/           # parsePackageJson
-│   └── install-gate.ts
+│   └── pkg-json/           # parsePackageJson
 ├── src/                    # Rust (wasm)
 ├── public/
 ├── sw/

@@ -1,20 +1,6 @@
 /**
- * Node Executor — shared types for sandbox, bridge, and module system.
+ * Shared types for module system and sandbox.
  */
-
-export interface NodeExecutorOptions {
-  cwd: string
-  env?: Record<string, string>
-  argv?: string[]
-  timeout?: number // ms, default unlimited
-}
-
-export interface ExecutionResult {
-  exitCode: number
-  stdout: string
-  stderr: string
-  error?: Error
-}
 
 export interface ModuleRecord {
   id: string // absolute path in VFS
