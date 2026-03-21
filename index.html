@@ -3,39 +3,66 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Browser Node - Phase 1</title>
+  <title>Browser Node Shell</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #0d1117;
+      overflow: hidden;
+    }
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    #titlebar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .dot-red { background: #ff5f56; }
+    .dot-yellow { background: #ffbd2e; }
+    .dot-green { background: #27c93f; }
+    #title {
+      flex: 1;
+      text-align: center;
+      color: #8b949e;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 13px;
+    }
+    #terminal-wrapper {
+      flex: 1;
+      padding: 12px;
+      overflow: hidden;
+    }
+    #terminal {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
 </head>
 <body>
   <div id="app">
-    <h1>Browser Node - Phase 1 Demo</h1>
-    <p id="status">Đang khởi động...</p>
-    <div>
-      <h2>RamVfs + OPFS</h2>
-      <button id="btn-write">Ghi file project/index.html</button>
-      <button id="btn-read">Đọc VFS file</button>
-      <button id="btn-f5">F5 để test restore từ OPFS</button>
+    <div id="titlebar">
+      <div class="dot dot-red"></div>
+      <div class="dot dot-yellow"></div>
+      <div class="dot dot-green"></div>
+      <span id="title">Browser Node — Virtual Shell</span>
     </div>
-    <div>
-      <h2>http.createServer (Phase 2)</h2>
-      <button id="btn-http">Fetch /__port__/3000/</button>
-      <p id="http-result"></p>
-    </div>
-    <div>
-      <h2>npm (Phase 4)</h2>
-      <button id="btn-npm">npm install</button>
-      <button id="btn-npm-ci">npm ci</button>
-      <p id="npm-result"></p>
-    </div>
-    <div>
-      <h2>child_process.spawnSync (Phase 3)</h2>
-      <button id="btn-spawn">Chạy project/hello.js</button>
-      <p id="spawn-result"></p>
-    </div>
-    <div>
-      <h2>fs.watch (0ms) + HMR-like</h2>
-      <textarea id="editor" rows="4" style="width:100%"><h1>Demo từ VFS</h1><p>Chỉnh sửa rồi click Ghi - watcher fire, iframe reload</p></textarea>
-      <p id="watch-log"></p>
-      <iframe id="preview" style="border:1px solid #ccc;width:100%;height:120px"></iframe>
+    <div id="terminal-wrapper">
+      <div id="terminal"></div>
     </div>
   </div>
   <script type="module" src="/js/app.js"></script>
