@@ -33,7 +33,7 @@ class RamVfs {
   }
 
   maybeEmit(path, kind) {
-    const locked = [...this.locks.keys()].some(p => path.startsWith(p))
+    const locked = [...this.locks.keys()].some(p => path === p || path.startsWith(p + '/'))
     if (locked) {
       this.eventBuf.push({ path, kind })
     } else {

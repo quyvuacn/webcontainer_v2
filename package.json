@@ -9,6 +9,7 @@
     "build:obfuscate": "node scripts/build.js --obfuscate",
     "check-env": "bash scripts/check-env.sh",
     "build:placeholder": "bash build/build-placeholder.sh",
+    "build:vfs": "bash build/build-vfs.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "benchmark": "vitest run js/benchmark.test.js --reporter=verbose"

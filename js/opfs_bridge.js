@@ -33,11 +33,15 @@ export function opfsRead(path) {
 }
 
 export function opfsListAll() {
-  return send({ op: 'list_all' }).then(d => d.results || [])
+  return send({ op: 'list_all' }).then(d => d.files || [])
+}
+
+export function opfsDelete(path) {
+  return send({ op: 'delete', path })
 }
 
 export function createBroadcastChannel(callback) {
-  const bc = new BroadcastChannel('opfs_sync')
+  const bc = new BroadcastChannel('vfs_opfs_sync')
   bc.onmessage = ({ data }) => {
     if (data.type === 'file_changed') callback(data.path)
   }
