@@ -47,10 +47,15 @@ function writeTo(buf, data) {
 
 
 async function runScript(file, args, env = {}) {
+  let exitCode = 0
   const bytes = await vfsRead(file)
   if (!bytes) {
     writeTo(stderr, `Error: Cannot find module '${file}'\n`)
-    if (done) { Atomics.store(new Int32Array(done.buffer || done), 0, 1); Atomics.notify(new Int32Array(done.buffer || done), 0) }
+    exitCode = 1
+    if (done) {
+      new Int32Array(done)[0] = exitCode
+      self.postMessage({ type: 'done' })
+    }
     return
   }
   const code = new TextDecoder().decode(bytes)
@@ -82,10 +87,11 @@ async function runScript(file, args, env = {}) {
     }
   } catch (e) {
     err.write(String(e) + '\n')
+    exitCode = 1
   }
   if (done) {
-    Atomics.store(new Int32Array(done), 0, 1)
-    Atomics.notify(new Int32Array(done), 0)
+    new Int32Array(done)[0] = exitCode
+    self.postMessage({ type: 'done' })
   }
 }
 

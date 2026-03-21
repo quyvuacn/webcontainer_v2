@@ -1,5 +1,4 @@
 /* @ts-self-types="./vfs_ram.d.ts" */
-import { opfsDelete, opfsWrite } from './snippets/vfs-21e2f906aeb15748/js/opfs_bridge.js';
 
 /**
  * Acquire a write lock on `prefix`.
@@ -147,6 +146,17 @@ export function vfs_remove_prefix(prefix) {
 }
 
 /**
+ * Called once by JS (WasmVfsAdapter) after WASM init.
+ * `write_fn(path: string, bytes: Uint8Array) → void`
+ * `delete_fn(path: string) → void`
+ * @param {Function} write_fn
+ * @param {Function} delete_fn
+ */
+export function vfs_set_opfs_callbacks(write_fn, delete_fn) {
+    wasm.vfs_set_opfs_callbacks(addHeapObject(write_fn), addHeapObject(delete_fn));
+}
+
+/**
  * Stat `path`. Returns a JS object `{ size, mtime, is_file, is_dir }`,
  * or `null` if the path does not exist.
  * @param {string} path
@@ -220,6 +230,10 @@ function __wbg_get_imports() {
             const ret = getObject(arg0).call(getObject(arg1), getObject(arg2));
             return addHeapObject(ret);
         }, arguments); },
+        __wbg_call_dcc2662fa17a72cf: function() { return handleError(function (arg0, arg1, arg2, arg3) {
+            const ret = getObject(arg0).call(getObject(arg1), getObject(arg2), getObject(arg3));
+            return addHeapObject(ret);
+        }, arguments); },
         __wbg_new_a70fbab9066b301f: function() {
             const ret = new Array();
             return addHeapObject(ret);
@@ -228,17 +242,13 @@ function __wbg_get_imports() {
             const ret = new Object();
             return addHeapObject(ret);
         },
+        __wbg_new_from_slice_22da9388ac046e50: function(arg0, arg1) {
+            const ret = new Uint8Array(getArrayU8FromWasm0(arg0, arg1));
+            return addHeapObject(ret);
+        },
         __wbg_now_16f0c993d5dd6c27: function() {
             const ret = Date.now();
             return ret;
-        },
-        __wbg_opfsDelete_1dd56c2f8e9d467a: function(arg0, arg1) {
-            const ret = opfsDelete(getStringFromWasm0(arg0, arg1));
-            return addHeapObject(ret);
-        },
-        __wbg_opfsWrite_c2799badf12199f9: function(arg0, arg1, arg2, arg3) {
-            const ret = opfsWrite(getStringFromWasm0(arg0, arg1), getArrayU8FromWasm0(arg2, arg3));
-            return addHeapObject(ret);
         },
         __wbg_push_e87b0e732085a946: function(arg0, arg1) {
             const ret = getObject(arg0).push(getObject(arg1));

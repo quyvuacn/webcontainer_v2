@@ -133,10 +133,26 @@ async function bootstrap() {
   initOpfsBridge('/js/opfs_worker.js')
 
   try {
-    const wasm = await initWasmVfs()
-    wasm?.write?.('vfscheck', new Uint8Array([1]))
-    const ok = wasm?.read?.('vfscheck')?.length === 1
-    if (wasm?.delete) wasm.delete('vfscheck')
+    const wasm = await initWasmVfs({ opfsWrite, opfsDelete })
+    let ok = false
+    try {
+      wasm?.preload?.('vfscheck', new Uint8Array([1]))
+    } catch (e) {
+      console.warn('[bootstrap] WASM preload failed:', e?.message ?? e)
+      throw e
+    }
+    try {
+      ok = wasm?.read?.('vfscheck')?.length === 1
+    } catch (e) {
+      console.warn('[bootstrap] WASM read failed:', e?.message ?? e)
+      throw e
+    }
+    try {
+      if (wasm?.delete) wasm.delete('vfscheck')
+    } catch (e) {
+      console.warn('[bootstrap] WASM delete failed:', e?.message ?? e)
+      throw e
+    }
     vfs = ok ? wasm : new RamVfs(opfsWrite, opfsDelete)
     if (!ok) console.warn('[bootstrap] WASM VFS failed self-check, using JS RamVfs')
   } catch (e) {

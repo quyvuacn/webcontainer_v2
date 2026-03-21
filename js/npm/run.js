@@ -1,4 +1,4 @@
-export function npmRun(scriptName, vfsRead, spawnSync, pkgPath = 'project') {
+export async function npmRun(scriptName, vfsRead, spawnSyncAsync, pkgPath = 'project') {
   const pkgBytes = vfsRead(`${pkgPath}/package.json`)
   if (!pkgBytes) throw new Error('No package.json')
   const pkg = JSON.parse(new TextDecoder().decode(pkgBytes))
@@ -11,5 +11,5 @@ export function npmRun(scriptName, vfsRead, spawnSync, pkgPath = 'project') {
   if (!file) throw new Error(`Script "${scriptName}" must be "node <file>"`)
 
   const filePath = file.startsWith('./') ? `${pkgPath}/${file.slice(2)}` : `${pkgPath}/${file}`
-  return spawnSync(filePath, [], { cwd: pkgPath })
+  return spawnSyncAsync(filePath, [], { cwd: pkgPath })
 }

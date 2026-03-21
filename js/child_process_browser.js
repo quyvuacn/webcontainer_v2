@@ -35,6 +35,10 @@ export function spawn(file, args = [], options = {}) {
 }
 
 export function spawnSync(file, args = [], options = {}) {
+  throw new Error('spawnSync is deprecated. Use spawnSyncAsync (returns Promise).')
+}
+
+export function spawnSyncAsync(file, args = [], options = {}) {
   const done = new SharedArrayBuffer(4)
   const stdout = createBuffer(STDOUT_SIZE)
   const stderr = createBuffer(65536)
@@ -53,12 +57,16 @@ export function spawnSync(file, args = [], options = {}) {
     }
   }
 
-  Atomics.wait(new Int32Array(done), 0, 0)
-  worker.terminate()
-
-  return {
-    status: new Int32Array(done)[0],
-    stdout: readBuffer(stdout),
-    stderr: readBuffer(stderr),
-  }
+  return new Promise((resolve) => {
+    worker.onmessage = ({ data }) => {
+      if (data?.type === 'done') {
+        worker.terminate()
+        resolve({
+          status: new Int32Array(done)[0],
+          stdout: readBuffer(stdout),
+          stderr: readBuffer(stderr),
+        })
+      }
+    }
+  })
 }

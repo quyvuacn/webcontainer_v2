@@ -2,7 +2,7 @@ import * as Path from './path.js'
 import { npmInstall } from '../npm/install.js'
 import { npmCi } from '../npm/ci.js'
 import { npmRun } from '../npm/run.js'
-import { spawnSync } from '../child_process_browser.js'
+import { spawnSyncAsync } from '../child_process_browser.js'
 
 const A = {
   reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
@@ -217,7 +217,7 @@ export const commands = {
           writeln(A.red + 'npm run: missing script name' + A.reset)
           return { exitCode: 1 }
         }
-        const result = npmRun(script, vfsRead, spawnSync, cwd)
+        const result = await npmRun(script, vfsRead, spawnSyncAsync, cwd)
         if (result.stdout) writeln(result.stdout)
         if (result.stderr) writeln(A.red + result.stderr + A.reset)
         return { exitCode: result.status ?? 1 }

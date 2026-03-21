@@ -1,38 +1,49 @@
-/// opfs_bridge.rs — single source of all JS bindings to opfs_bridge.js.
+/// opfs_bridge.rs — OPFS callbacks injected from JS at runtime.
 ///
-/// All OPFS operations are fire-and-forget Promises. The Main Thread
-/// MUST NOT await any of them — it must never block on I/O.
+/// Instead of importing a JS module (which wasm-bindgen embeds as a snippet
+/// and build scripts may accidentally overwrite), we use a simpler pattern:
 ///
-/// Call sites:
-///   RamVfs::write()  → opfs_write()
-///   RamVfs::delete() → opfs_delete()
-///   lib.rs bootstrap → opfs_list_all(), opfs_read()
+///   JS calls `vfs_set_opfs_callbacks(write_fn, delete_fn)` once at init.
+///   Rust stores the Functions in thread-local storage.
+///   RamVfs calls them fire-and-forget on every write/delete.
 ///
-/// When not targeting wasm32 (e.g. cargo test on native), these are no-ops
-/// so unit tests can run without a JS environment.
+/// This keeps WASM self-contained — no external JS module imports,
+/// no snippets that could be corrupted by build tooling.
 
-#[cfg(target_arch = "wasm32")]
+use std::cell::RefCell;
+
+use js_sys::Function;
 use wasm_bindgen::prelude::*;
 
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(module = "/js/opfs_bridge.js")]
-extern "C" {
-    #[wasm_bindgen(js_name = opfsWrite)]
-    fn opfs_write_impl(path: &str, bytes: &[u8]) -> js_sys::Promise;
-    #[wasm_bindgen(js_name = opfsDelete)]
-    fn opfs_delete_impl(path: &str) -> js_sys::Promise;
+thread_local! {
+    static OPFS_WRITE:  std::cell::RefCell<Option<Function>> = RefCell::new(None);
+    static OPFS_DELETE: std::cell::RefCell<Option<Function>> = RefCell::new(None);
 }
 
-#[cfg(target_arch = "wasm32")]
+/// Called once by JS (WasmVfsAdapter) after WASM init.
+/// `write_fn(path: string, bytes: Uint8Array) → void`
+/// `delete_fn(path: string) → void`
+#[wasm_bindgen]
+pub fn vfs_set_opfs_callbacks(write_fn: Function, delete_fn: Function) {
+    OPFS_WRITE.with(|c| *c.borrow_mut() = Some(write_fn));
+    OPFS_DELETE.with(|c| *c.borrow_mut() = Some(delete_fn));
+}
+
+/// Fire-and-forget OPFS write. Called by RamVfs::write().
 pub fn opfs_write(path: &str, bytes: &[u8]) {
-    let _ = opfs_write_impl(path, bytes);
-}
-#[cfg(target_arch = "wasm32")]
-pub fn opfs_delete(path: &str) {
-    let _ = opfs_delete_impl(path);
+    OPFS_WRITE.with(|c| {
+        if let Some(f) = c.borrow().as_ref() {
+            let arr = js_sys::Uint8Array::from(bytes);
+            let _ = f.call2(&JsValue::NULL, &JsValue::from_str(path), &arr);
+        }
+    });
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub fn opfs_write(_path: &str, _bytes: &[u8]) {}
-#[cfg(not(target_arch = "wasm32"))]
-pub fn opfs_delete(_path: &str) {}
+/// Fire-and-forget OPFS delete. Called by RamVfs::delete() and remove_prefix().
+pub fn opfs_delete(path: &str) {
+    OPFS_DELETE.with(|c| {
+        if let Some(f) = c.borrow().as_ref() {
+            let _ = f.call1(&JsValue::NULL, &JsValue::from_str(path));
+        }
+    });
+}

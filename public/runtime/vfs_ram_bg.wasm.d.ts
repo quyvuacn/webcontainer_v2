@@ -1,6 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const vfs_set_opfs_callbacks: (a: number, b: number) => void;
 export const vfs_acquire_lock: (a: number, b: number) => bigint;
 export const vfs_delete: (a: number, b: number) => number;
 export const vfs_exists: (a: number, b: number) => number;

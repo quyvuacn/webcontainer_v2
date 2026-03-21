@@ -70,6 +70,13 @@ export function vfs_release_lock(id: bigint): void;
 export function vfs_remove_prefix(prefix: string): void;
 
 /**
+ * Called once by JS (WasmVfsAdapter) after WASM init.
+ * `write_fn(path: string, bytes: Uint8Array) → void`
+ * `delete_fn(path: string) → void`
+ */
+export function vfs_set_opfs_callbacks(write_fn: Function, delete_fn: Function): void;
+
+/**
  * Stat `path`. Returns a JS object `{ size, mtime, is_file, is_dir }`,
  * or `null` if the path does not exist.
  */
@@ -104,6 +111,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly vfs_set_opfs_callbacks: (a: number, b: number) => void;
     readonly vfs_acquire_lock: (a: number, b: number) => bigint;
     readonly vfs_delete: (a: number, b: number) => number;
     readonly vfs_exists: (a: number, b: number) => number;

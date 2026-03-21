@@ -2,7 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { bootstrap } from './main.js'
-import { spawnSync } from './child_process_browser.js'
+import { spawnSyncAsync } from './child_process_browser.js'
 import { createShellVfsAdapter } from './shell/vfs_adapter.js'
 import { Shell } from './shell/shell.js'
 import * as Path from './shell/path.js'
@@ -39,9 +39,9 @@ function createTerminal(container, writeWelcome = false) {
 
 function createShellState(vfs, term) {
   const shellVfs = createShellVfsAdapter(vfs)
-  const spawnNode = async (args, opts) => {
-    const file = Path.resolve(opts?.cwd || 'project', args[0] || '')
-    const r = spawnSync(file, args.slice(1), { cwd: opts?.cwd })
+    const spawnNode = async (args, opts) => {
+      const file = Path.resolve(opts?.cwd || 'project', args[0] || '')
+      const r = await spawnSyncAsync(file, args.slice(1), { cwd: opts?.cwd })
     if (r.stdout) term.write(r.stdout)
     if (r.stderr) term.write('\x1b[31m' + r.stderr + '\x1b[0m')
     return r.status ?? 1
