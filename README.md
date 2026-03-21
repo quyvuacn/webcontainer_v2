@@ -9,7 +9,7 @@ Chạy Node.js ecosystem trong browser, không server.
 - **Phase 3**: child_process spawn/spawnSync
 - **Phase 4**: npm install (semver, resolver, stubs)
 - **Phase 5**: CDN Resolver (exports, fetch)
-- **Phase 6**: Node C++ Bindings — placeholder + build script, xem patches/README
+- **Phase 6**: Node C++ Bindings — WASM VFS (Rust) built with wasm-bindgen; fallback to JS RamVfs if WASM fails
 - **Phase 7**: Hardening — VFS_PREFIX random, obfuscate
 
 ### Chạy
@@ -24,12 +24,17 @@ Mở http://localhost:5173
 ### Build
 
 ```bash
-npm run build          # Dev build
-npm run build:prod     # Prod + random VFS_PREFIX
-npm run build:obfuscate  # Prod + obfuscate (cần javascript-obfuscator)
-npm run build:placeholder  # WASM placeholder (cần emcc)
-npm run check-env         # Kiểm tra toolchain
+npm run build            # Dev build
+npm run build:prod       # Prod + random VFS_PREFIX (includes WASM if Rust installed)
+npm run build:obfuscate  # Prod + obfuscate (requires javascript-obfuscator)
+npm run build:vfs        # Build WASM VFS only (requires: rustup, wasm-bindgen-cli)
+npm run check-env        # Check toolchain
 ```
+
+WASM build (Phase 6):
+- Requires: Rust, `cargo install wasm-bindgen-cli`
+- Output: `public/runtime/vfs_ram.js`, `public/runtime/vfs_ram_bg.wasm`
+- If build fails, app falls back to JS RamVfs automatically
 
 ### Test
 
