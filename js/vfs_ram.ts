@@ -122,6 +122,9 @@ export class RamVfs {
     if (this.dirs.has(path)) {
       return { isFile: () => false, isDirectory: () => true, size: 4096, mtime: new Date(0), mode: 0o755 }
     }
+    if (path === '' && (this.files.size > 0 || this.dirs.size > 0)) {
+      return { isFile: () => false, isDirectory: () => true, size: 4096, mtime: new Date(0), mode: 0o755 }
+    }
     return null
   }
 

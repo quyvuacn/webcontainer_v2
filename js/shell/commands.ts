@@ -28,8 +28,9 @@ const A = {
 
 function resolvePath(cwd: string, input: string | undefined, fallback: string | undefined, home = 'project') {
   if (!input) return fallback ?? cwd
-  const expanded = input === '~' ? home : input.startsWith('~/') ? Path.join(home, input.slice(2)) : input
-  return Path.resolve(cwd, expanded)
+  if (input === '~') return home
+  if (input.startsWith('~/')) return Path.join(home, input.slice(2))
+  return Path.resolve(cwd, input)
 }
 
 export const commands: Record<string, (ctx: ShellContext) => Promise<{ exitCode: number; newCwd?: string }>> = {
@@ -48,8 +49,9 @@ export const commands: Record<string, (ctx: ShellContext) => Promise<{ exitCode:
       }
       return { newCwd: oldPwd!, exitCode: 0 }
     }
-    let target = resolvePath(cwd, raw, h, h)
-    if (!target) target = h
+    let target = raw === '..' || raw === '.' ? Path.resolve(cwd, raw) : resolvePath(cwd, raw, h, h)
+    if (!target && raw !== '..' && raw !== '.') target = h
+    if (target === '') return { newCwd: '', exitCode: 0 }
     try {
       const stat = await (vfs as { stat: (p: string) => Promise<{ isDirectory: () => boolean }> }).stat(target)
       if (!stat.isDirectory()) {

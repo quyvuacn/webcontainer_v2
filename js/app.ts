@@ -20,6 +20,51 @@ const termOpts = {
 
 let termCount = 0
 type RamVfs = { read: (p: string) => Uint8Array | null; write: (p: string, b: Uint8Array | string) => void; exists: (p: string) => boolean; readdir?: (p: string) => string[]; stat?: (p: string) => { isFile: () => boolean; isDirectory: () => boolean } | null; mkdir?: (p: string) => void; dirs?: Set<string>; files?: Map<string, { content: Uint8Array; mtime?: number; mode?: number }>; acquireLock: (p: string) => number; releaseLock: (id: number) => void }
+
+const UBUNTU_DIRS = ['bin', 'dev', 'etc', 'home/user', 'tmp', 'usr/bin', 'usr/local/bin', 'project']
+const BIN_PLACEHOLDERS: Record<string, string> = {
+  bin: 'cat chmod cp echo grep hostname ls mkdir mv pwd rm',
+  'usr/bin': 'alias cd clear env false find head help sort tail touch true wc which',
+  'usr/local/bin': 'node npm',
+}
+
+function initUbuntuStructure(vfs: RamVfs) {
+  vfs.dirs?.add?.('')
+  for (const dir of UBUNTU_DIRS) {
+    vfs.mkdir?.(dir)
+  }
+  for (const [dir, names] of Object.entries(BIN_PLACEHOLDERS)) {
+    for (const name of names.split(/\s+/)) {
+      const path = `${dir}/${name}`
+      if (!vfs.exists(path)) vfs.write(path, '')
+    }
+  }
+  const etcFiles: [string, string][] = [
+    ['etc/passwd', 'root:x:0:0:root:/root:/bin/bash\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\nuser:x:1000:1000:WebContainer User:/home/user:/bin/bash\n'],
+    ['etc/group', 'root:x:0:\nusers:x:100:user\nnogroup:x:65534:\n'],
+    ['etc/hosts', '127.0.0.1\tlocalhost\n127.0.1.1\tbrowser-node\n'],
+    ['etc/hostname', 'browser-node\n'],
+    ['etc/os-release', 'PRETTY_NAME="Ubuntu 22.04 LTS"\nNAME="Ubuntu"\nVERSION_ID="22.04"\nID=ubuntu\n'],
+    ['etc/shells', '# valid login shells\n/bin/sh\n/bin/bash\n/usr/bin/bash\n'],
+    ['etc/motd', 'Welcome to Browser Node\nUbuntu 22.04 LTS - virtual environment\n'],
+  ]
+  for (const [path, content] of etcFiles) {
+    if (!vfs.exists(path)) vfs.write(path, content)
+  }
+  for (const name of ['null', 'zero', 'random', 'urandom', 'tty']) {
+    const path = `dev/${name}`
+    if (!vfs.exists(path)) vfs.write(path, '')
+  }
+  if (!vfs.exists('home/user/.bashrc')) {
+    vfs.write('home/user/.bashrc', '# ~/.bashrc: executed by bash(1) for non-login shells.\n# Browser Node virtual environment\n\ncase $- in\n    *i*) ;;\n      *) return;;\nesac\n')
+  }
+  if (!vfs.exists('home/user/.profile')) {
+    vfs.write('home/user/.profile', '# ~/.profile: executed by the command interpreter for login shells.\nif [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi\n')
+  }
+  if (!vfs.exists('home/user/welcome.txt')) {
+    vfs.write('home/user/welcome.txt', 'Welcome to Browser Node!\nVirtual filesystem in the browser.\ncd project to work on your app.\n')
+  }
+}
 let vfs: RamVfs | null = null
 let createServerFn: ((handler: (req: unknown, res: unknown) => void) => { listen: (port: number) => void }) | null = null
 
@@ -49,6 +94,7 @@ function createShellState(vfs: RamVfs, term: Terminal) {
   const spawnSyncAsync = createSpawnSyncAsync(vfs)
   const shell = new Shell(shellVfs as Shell['vfs'], toTerm, {
     cwd: 'project',
+    home: 'home/user',
     user: 'user',
     spawnNode,
     spawnSyncAsync,
@@ -236,6 +282,12 @@ async function init() {
     title.textContent = 'Browser Node — Virtual Shell'
 
     term.write('\x1b[2K\x1b[1G')
+
+    if (!vfs.exists('etc/passwd')) {
+      initUbuntuStructure(vfs)
+    } else {
+      vfs.dirs?.add?.('')
+    }
 
     try {
       const res = await fetch('/sample_vite.json')

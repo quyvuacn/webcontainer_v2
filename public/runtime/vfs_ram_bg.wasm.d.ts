@@ -1,7 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const vfs_set_opfs_callbacks: (a: number, b: number) => void;
 export const vfs_acquire_lock: (a: number, b: number) => bigint;
 export const vfs_delete: (a: number, b: number) => number;
 export const vfs_exists: (a: number, b: number) => number;
@@ -13,6 +12,7 @@ export const vfs_read: (a: number, b: number, c: number) => void;
 export const vfs_readdir: (a: number, b: number) => number;
 export const vfs_release_lock: (a: bigint) => void;
 export const vfs_remove_prefix: (a: number, b: number) => void;
+export const vfs_set_opfs_callbacks: (a: number, b: number) => void;
 export const vfs_stat: (a: number, b: number) => number;
 export const vfs_unwatch: (a: bigint) => number;
 export const vfs_watch: (a: number, b: number, c: number, d: number) => bigint;

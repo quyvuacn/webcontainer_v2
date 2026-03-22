@@ -50,7 +50,7 @@ export class Shell {
   }
 
   getPrompt() {
-    const dir = this.cwd === this.home ? '~' : this.cwd
+    const dir = this.cwd === this.home ? '~' : this.cwd || '/'
     return A.bold + A.green + this.user + A.reset + A.dim + '@' + A.reset + A.green + 'browser-node' + A.reset + ':' + A.bold + A.blue + dir + A.reset + '$ '
   }
 
@@ -126,7 +126,7 @@ export class Shell {
         result = await handler(ctx)
       }
 
-      if (result.newCwd) {
+      if (result.newCwd !== undefined) {
         this.oldPwd = this.cwd
         this.cwd = result.newCwd
       }

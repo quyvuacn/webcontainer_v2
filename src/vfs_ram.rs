@@ -156,6 +156,9 @@ impl RamVfs {
         if self.dirs.contains(&path) {
             return Some(Stat { size: 0, mtime: 0, is_file: false, is_dir: true });
         }
+        if path.is_empty() && (!self.files.is_empty() || !self.dirs.is_empty()) {
+            return Some(Stat { size: 0, mtime: 0, is_file: false, is_dir: true });
+        }
         None
     }
 
@@ -168,14 +171,20 @@ impl RamVfs {
     /// Returns names (not full paths), sorted.
     pub fn readdir(&self, dir_path: &str) -> Vec<String> {
         let dir    = normalize(dir_path);
-        let prefix = format!("{}/", dir);
+        let prefix_slash = if dir.is_empty() { "" } else { &format!("{}/", dir) };
         let mut seen = HashSet::new();
 
         for path in self.files.keys().chain(self.dirs.iter()) {
-            if let Some(rest) = path.strip_prefix(&prefix) {
-                let child = rest.split('/').next().unwrap_or(rest);
-                if !child.is_empty() {
-                    seen.insert(child.to_string());
+            let child = if dir.is_empty() {
+                path.split('/').next().map(str::to_string)
+            } else if let Some(rest) = path.strip_prefix(prefix_slash) {
+                rest.split('/').next().map(|s| s.to_string())
+            } else {
+                None
+            };
+            if let Some(c) = child {
+                if !c.is_empty() {
+                    seen.insert(c);
                 }
             }
         }

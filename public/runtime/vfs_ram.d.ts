@@ -111,7 +111,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly vfs_set_opfs_callbacks: (a: number, b: number) => void;
     readonly vfs_acquire_lock: (a: number, b: number) => bigint;
     readonly vfs_delete: (a: number, b: number) => number;
     readonly vfs_exists: (a: number, b: number) => number;
@@ -123,6 +122,7 @@ export interface InitOutput {
     readonly vfs_readdir: (a: number, b: number) => number;
     readonly vfs_release_lock: (a: bigint) => void;
     readonly vfs_remove_prefix: (a: number, b: number) => void;
+    readonly vfs_set_opfs_callbacks: (a: number, b: number) => void;
     readonly vfs_stat: (a: number, b: number) => number;
     readonly vfs_unwatch: (a: bigint) => number;
     readonly vfs_watch: (a: number, b: number, c: number, d: number) => bigint;

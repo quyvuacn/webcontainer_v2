@@ -1,3 +1,12 @@
+interface FileSystemSyncAccessHandle {
+  truncate(newSize: number): void
+  flush(): void
+  close(): void
+  write(buffer: BufferSource | ArrayBufferView, offset?: number): number
+}
+
+type FileHandleWithSync = { createSyncAccessHandle(): Promise<FileSystemSyncAccessHandle> }
+
 const bc = new BroadcastChannel("vfs_opfs_sync")
 const writeQueue = new Map<string, Promise<unknown>>()
 
@@ -39,13 +48,14 @@ async function getDirHandle(rootDir: Promise<FileSystemDirectoryHandle>, path: s
 
 async function walkAll(dir: FileSystemDirectoryHandle, prefix: string, results: { path: string; content: Uint8Array }[]) {
   for await (const [name, handle] of dir.entries()) {
+    if (typeof name !== 'string' || !name) continue
     const path = prefix ? `${prefix}/${name}` : name
     if (handle.kind === "file") {
-      const file = await handle.getFile()
+      const file = await (handle as FileSystemFileHandle).getFile()
       const content = new Uint8Array(await file.arrayBuffer())
       results.push({ path, content })
     } else {
-      await walkAll(handle, path, results)
+      await walkAll(handle as FileSystemDirectoryHandle, path, results)
     }
   }
 }
@@ -53,7 +63,7 @@ async function walkAll(dir: FileSystemDirectoryHandle, prefix: string, results: 
 async function handleWrite(rootDir: Promise<FileSystemDirectoryHandle>, { path, bytes }: { path: string; bytes: Uint8Array }) {
   return queueWrite(path, async () => {
     const handle = await getFileHandle(rootDir, path, true)
-    const sync = await handle.createSyncAccessHandle()
+    const sync = await (handle as unknown as FileHandleWithSync).createSyncAccessHandle()
     try {
       sync.truncate(0)
       sync.write(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes))
@@ -100,25 +110,84 @@ async function handleListAll(rootDir: Promise<FileSystemDirectoryHandle>) {
   return { files }
 }
 
-const rootPromise = navigator.storage.getDirectory()
+const VFS_BASE = 'vfs'
+let vfsRootPromise: Promise<FileSystemDirectoryHandle> | null = null
 
-;(self as Worker).onmessage = async ({ data }: MessageEvent<{ op: string; id: string; path?: string; bytes?: Uint8Array }>) => {
+async function getVfsRoot() {
+  if (vfsRootPromise) return vfsRootPromise
+  vfsRootPromise = (async () => {
+  const root = await navigator.storage.getDirectory()
+  const vfsDir = await root.getDirectoryHandle(VFS_BASE, { create: true })
+  const entries = []
+  for await (const _ of vfsDir.entries()) {
+    entries.push(1)
+    if (entries.length > 0) break
+  }
+  if (entries.length === 0) {
+    for await (const [name, handle] of root.entries()) {
+      if (name === VFS_BASE || typeof name !== 'string' || !name) continue
+      if (handle.kind === 'file') {
+        const f = await (handle as FileSystemFileHandle).getFile()
+        const content = new Uint8Array(await f.arrayBuffer())
+        const target = await getFileHandle(Promise.resolve(vfsDir), name, true)
+        const sync = await (target as unknown as FileHandleWithSync).createSyncAccessHandle()
+        try {
+          sync.truncate(0)
+          sync.write(content)
+          sync.flush()
+        } finally {
+          sync.close()
+        }
+      } else {
+        await migrateDir(handle as FileSystemDirectoryHandle, vfsDir, name)
+      }
+    }
+  }
+  return vfsDir
+  })()
+  return vfsRootPromise
+}
+
+async function migrateDir(src: FileSystemDirectoryHandle, parent: FileSystemDirectoryHandle, name: string) {
+  const dest = await parent.getDirectoryHandle(name, { create: true })
+  for await (const [n, h] of src.entries()) {
+    if (typeof n !== 'string' || !n) continue
+    if (h.kind === 'file') {
+      const f = await (h as FileSystemFileHandle).getFile()
+      const content = new Uint8Array(await f.arrayBuffer())
+      const target = await dest.getFileHandle(n, { create: true })
+      const sync = await (target as unknown as FileHandleWithSync).createSyncAccessHandle()
+      try {
+        sync.truncate(0)
+        sync.write(content)
+        sync.flush()
+      } finally {
+        sync.close()
+      }
+    } else {
+      await migrateDir(h as FileSystemDirectoryHandle, dest, n)
+    }
+  }
+}
+
+;(self as unknown as Worker).onmessage = async ({ data }: MessageEvent<{ op: string; id: string; path?: string; bytes?: Uint8Array }>) => {
   const { op, id, ...args } = data
   let result: unknown
 
   try {
+    const vfsRoot = getVfsRoot()
     switch (op) {
       case "write":
-        result = await handleWrite(rootPromise, args as { path: string; bytes: Uint8Array })
+        result = await handleWrite(vfsRoot, args as { path: string; bytes: Uint8Array })
         break
       case "delete":
-        result = await handleDelete(rootPromise, args as { path: string })
+        result = await handleDelete(vfsRoot, args as { path: string })
         break
       case "read":
-        result = await handleRead(rootPromise, args as { path: string })
+        result = await handleRead(vfsRoot, args as { path: string })
         break
       case "list_all":
-        result = await handleListAll(rootPromise)
+        result = await handleListAll(vfsRoot)
         break
       default:
         result = { err: `Unknown op: ${op}` }
@@ -127,5 +196,5 @@ const rootPromise = navigator.storage.getDirectory()
     result = { err: String(err) }
   }
 
-  ;(self as Worker).postMessage({ id, ...result })
+  ;(self as unknown as Worker).postMessage(Object.assign({ id }, result))
 }
