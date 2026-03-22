@@ -1,7 +1,6 @@
 const mainClients = new Map()
 const pendingVfs = new Map()
-const portBuffers = new Map()
-const portQueues = new Map()
+const portMainChannels = new Map()
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -71,7 +70,9 @@ self.addEventListener('message', ({ data, source }) => {
     mainClients.set(source.id, source)
   }
   if (data.type === 'register_port') {
-    portBuffers.set(data.port, data.buffer)
+    const port = data.port
+    const mainPort = data.mainPort
+    if (mainPort) portMainChannels.set(port, mainPort)
     if (data.ackPort) { data.ackPort.postMessage('ok'); data.ackPort.close() }
   }
   if (data.type === 'vfs_response') {
@@ -94,9 +95,9 @@ self.addEventListener('fetch', event => {
   const portMatch = url.pathname.match(/^\/__port__\/(\d+)(\/.*|$)/)
   if (portMatch) {
     const port = parseInt(portMatch[1])
-    const buf = portBuffers.get(port)
-    if (buf) {
-      event.respondWith(handleVirtualTcp(event.request, buf))
+    const mainPort = portMainChannels.get(port)
+    if (mainPort) {
+      event.respondWith(handleVirtualTcpViaMain(event.request, port, mainPort))
       return
     }
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Port :${port}</title></head><body style="margin:0;padding:16px;font-family:system-ui;background:#0d1117;color:#c9d1d9"><h2>Port :${port} chưa sẵn sàng</h2><p>Chạy <code style="background:#21262d;padding:2px 6px">node server.js</code> trong terminal.</p><button id="btn" style="margin-top:12px;padding:8px 16px;background:#238636;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px">Chạy server</button><script>document.getElementById("btn").onclick=()=>{if(window.parent!==window)window.parent.postMessage({type:"run-preview-cmd",cmd:"node server.js"},"*")}</script></body></html>`
@@ -146,41 +147,30 @@ function deserializeResponse(bytes) {
   return new Response(body, { status: meta.status || 200, headers: Object.fromEntries(meta.headers || []) })
 }
 
-async function handleVirtualTcp(request, buf) {
+async function handleVirtualTcpViaMain(request, port, mainPort) {
   if (request.headers.get('upgrade') === 'websocket') {
     const { 0: client, 1: server } = new WebSocketPair()
-    bridgeWebSocket(server, buf)
-    return new Response(null, { status: 101, webSocket: client })
+    return new Response('WebSocket via Main not implemented', { status: 501 })
   }
-
-  // Serialize requests per-buffer so concurrent fetches don't corrupt the SAB
-  const prev = portQueues.get(buf) || Promise.resolve()
-  let release
-  const gate = new Promise(r => release = r)
-  portQueues.set(buf, prev.then(() => gate))
-  await prev
-
-  try {
-    const ctrl = new Int32Array(buf)
-    const data = new Uint8Array(buf)
-    const DATA_OFF = 12
-
-    const reqBytes = await serializeRequest(request)
-    data.set(reqBytes, DATA_OFF)
-    Atomics.store(ctrl, 1, reqBytes.length)
-    Atomics.store(ctrl, 0, 1)
-    Atomics.notify(ctrl, 0)
-
-    const result = Atomics.waitAsync(ctrl, 0, 1)
-    await (result.value ?? Promise.resolve())
-
-    const respLen = Atomics.load(ctrl, 2)
-    const respBytes = data.slice(DATA_OFF + reqBytes.length, DATA_OFF + reqBytes.length + respLen)
-    Atomics.store(ctrl, 0, 0)
-    return deserializeResponse(respBytes)
-  } finally {
-    release()
-  }
+  const reqBytes = await serializeRequest(request)
+  const { port1: respIn, port2: respOut } = new MessageChannel()
+  const p = new Promise((resolve, reject) => {
+    let done = false
+    const td = setTimeout(() => {
+      if (!done) { done = true; respIn.close(); reject(new Error('timeout')) }
+    }, 30000)
+    respIn.onmessage = ({ data }) => {
+      if (done) return
+      done = true
+      clearTimeout(td)
+      respIn.close()
+      if (data.error) reject(new Error(data.error))
+      else resolve(deserializeResponse(new Uint8Array(data.responseBytes)))
+    }
+    respIn.onmessageerror = () => { if (!done) { done = true; clearTimeout(td); respIn.close(); reject(new Error('messageerror')) } }
+  })
+  mainPort.postMessage({ requestBytes: [...reqBytes], responsePort: respOut }, [respOut])
+  return p
 }
 
 function bridgeWebSocket(ws, buf) {

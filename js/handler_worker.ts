@@ -8,7 +8,7 @@ let port: MessagePort | number = 0
 
 let pendingResolve: ((response: { status?: number; headers?: Record<string, string>; body?: string }) => void) | null = null
 
-;(self as Worker).onmessage = ({ data }: MessageEvent<{ hand_sab?: SharedArrayBuffer; mainPort?: MessagePort; port?: MessagePort; type?: string }>) => {
+;(self as unknown as Worker).onmessage = ({ data }: MessageEvent<{ hand_sab?: SharedArrayBuffer; mainPort?: MessagePort; port?: MessagePort; type?: string }>) => {
   if (data.hand_sab) handSab = data.hand_sab
   if (data.mainPort) {
     mainPort = data.mainPort

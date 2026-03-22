@@ -111,50 +111,72 @@ export function getVfsRead(path: string) {
 }
 
 function reRegisterPorts() {
-  for (const [port, buf] of portSabs.entries()) {
-    navigator.serviceWorker.controller?.postMessage(
-      { type: 'register_port', port, buffer: buf }  // SAB is shared, not transferred
-    )
+  for (const [port, swSab] of portSabs.entries()) {
+    sendPortToSw(port, swSab)
   }
 }
 
+async function processVirtualTcpRequest(port: number, requestBytes: Uint8Array): Promise<Uint8Array> {
+  const swSab = portSabs.get(port)
+  if (!swSab) throw new Error('No SAB for port ' + port)
+  const ctrl = new Int32Array(swSab)
+  const data = new Uint8Array(swSab)
+  const DATA_OFF = 12
+  data.set(requestBytes, DATA_OFF)
+  Atomics.store(ctrl, 1, requestBytes.length)
+  Atomics.store(ctrl, 0, 1)
+  Atomics.notify(ctrl, 0)
+  const result = Atomics.waitAsync(ctrl, 0, 1)
+  await (result.value ?? Promise.resolve())
+  const respLen = Atomics.load(ctrl, 2)
+  const respBytes = data.slice(DATA_OFF + requestBytes.length, DATA_OFF + requestBytes.length + respLen)
+  Atomics.store(ctrl, 0, 0)
+  return respBytes
+}
+
+function sendPortToSw(port: number, swSab: SharedArrayBuffer) {
+  const { port1: mainPort, port2: swPort } = new MessageChannel()
+  mainPort.onmessage = async ({ data: msg }: MessageEvent<{ requestBytes?: number[]; responsePort?: MessagePort }>) => {
+    if (!msg.requestBytes || !msg.responsePort) return
+    try {
+      const reqBytes = new Uint8Array(msg.requestBytes)
+      const respBytes = await processVirtualTcpRequest(port, reqBytes)
+      msg.responsePort.postMessage({ responseBytes: [...respBytes] })
+    } catch (e) {
+      msg.responsePort.postMessage({ error: (e as Error)?.message ?? String(e) })
+    }
+    msg.responsePort.close()
+  }
+  const ctrl = navigator.serviceWorker.controller
+  const { port1: ackIn, port2: ackOut } = new MessageChannel()
+  ackIn.onmessage = () => {
+    ackIn.close?.()
+    window.dispatchEvent(new CustomEvent('port-registered', { detail: { port } }))
+  }
+  ctrl?.postMessage({ type: 'register_port', port, mainPort: swPort, ackPort: ackOut }, [swPort, ackOut])
+}
+
 export function setupVirtualPort(port: number, handler: (req: unknown, res: unknown) => void) {
-  // Idempotent: if already registered with a live SAB, just re-send to SW
   if (portSabs.has(port)) {
     portHandlers.set(port, handler)
-    const existing = portSabs.get(port)!
-    const { port1: ackIn, port2: ackOut } = new MessageChannel()
-    ackIn.onmessage = () => {
-      ackIn.close?.()
-      window.dispatchEvent(new CustomEvent('port-registered', { detail: { port } }))
-    }
-    navigator.serviceWorker.controller?.postMessage(
-      { type: 'register_port', port, buffer: existing, ackPort: ackOut },  // SAB shared
-      [ackOut]
-    )
+    sendPortToSw(port, portSabs.get(port)!)
     return
   }
 
   portHandlers.set(port, handler)
 
-  // Create two SABs: SW ↔ TCP Worker, TCP Worker ↔ Handler Worker
-  const swSab  = new SharedArrayBuffer(SAB_SIZE)
+  const swSab = new SharedArrayBuffer(SAB_SIZE)
   const handSab = new SharedArrayBuffer(SAB_SIZE)
-
-  // Store SW SAB so reRegisterPorts can resend after SW restart
   portSabs.set(port, swSab)
 
-  // ── Spawn TCP Worker (spin loop, no async) ──────────────────────────────
   const tcpWorker = new Worker('/js/tcp_worker.ts', { type: 'module' })
   tcpWorker.postMessage({ sw_sab: swSab, hand_sab: handSab })
 
-  // ── Spawn Handler Worker (runs user code, handles requests) ────────────
   const { port1, port2 } = new MessageChannel()
   const handlerWorker = new Worker('/js/handler_worker.ts', { type: 'module' })
   handlerWorker.postMessage({ hand_sab: handSab, mainPort: port2, port }, [port2])
   handlerWorker.postMessage({ type: 'run' })
 
-  // Main Thread: deliver requests from Handler Worker → user handler → reply
   port1.onmessage = ({ data: msg }: MessageEvent<{ type: string; port?: number; request?: unknown }>) => {
     if (msg.type === 'handle_request') {
       const cb = portHandlers.get(msg.port ?? port)
@@ -191,20 +213,8 @@ export function setupVirtualPort(port: number, handler: (req: unknown, res: unkn
     }
   }
 
-  // Register port with SW — send the SAB buffer, wait for ack before notifying UI
-  const sendToSw = () => {
-    const { port1: ackIn, port2: ackOut } = new MessageChannel()
-    ackIn.onmessage = () => {
-      ackIn.close?.()
-      window.dispatchEvent(new CustomEvent('port-registered', { detail: { port } }))
-    }
-    navigator.serviceWorker.controller?.postMessage(
-      { type: 'register_port', port, buffer: swSab, ackPort: ackOut },  // SAB shared
-      [ackOut]
-    )
-  }
-  if (navigator.serviceWorker.controller) sendToSw()
-  else navigator.serviceWorker.ready.then(sendToSw)
+  if (navigator.serviceWorker.controller) sendPortToSw(port, swSab)
+  else navigator.serviceWorker.ready.then(() => sendPortToSw(port, swSab))
 
   if (!controllerchangeAttached) {
     controllerchangeAttached = true
