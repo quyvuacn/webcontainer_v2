@@ -743,7 +743,7 @@ export const stop = m?.stop;`,
                   ? "ts"
                   : ext === ".json"
                     ? "json"
-                    : "js";
+                    : "ts";
               return { contents: content, loader };
             }
           }
@@ -760,7 +760,7 @@ export const stop = m?.stop;`,
               ? "ts"
               : ext === ".json"
                 ? "json"
-                : "js";
+                : "ts";
           return { contents: content, loader };
         } catch (e) {
           throw e;
@@ -787,7 +787,7 @@ export const stop = m?.stop;`,
                 ? "ts"
                 : ext === ".json"
                   ? "json"
-                  : "js";
+                  : "ts";
             return { contents: content, loader };
           } catch (e) {
             return null;

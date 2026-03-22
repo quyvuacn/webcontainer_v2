@@ -190,7 +190,7 @@ function createEntryPreloadPlugin(
         if (!content) return null;
         const ext = args.path.match(/\.(tsx?|json)$/)?.[1] ?? "js";
         const loader =
-          ext === "ts" || ext === "tsx" ? "ts" : ext === "json" ? "json" : "js";
+          ext === "ts" || ext === "tsx" ? "ts" : ext === "json" ? "json" : "ts";
         return { contents: content, loader };
       });
     },

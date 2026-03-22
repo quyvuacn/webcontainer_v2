@@ -69,6 +69,9 @@ export function detectLoader(filePath: string): string {
     case "mjs":
     case "cjs":
     default:
-      return "js";
+      // Use TypeScript loader for JS files — it's a superset of JS and supports
+      // newer syntax (e.g. 'using' declarations / explicit resource management)
+      // that the plain JS loader may reject in certain esbuild versions.
+      return "ts";
   }
 }
