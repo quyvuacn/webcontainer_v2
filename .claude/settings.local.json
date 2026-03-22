@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/vuvie/Videos/Desktop/projects/webcontainer_v2 -maxdepth 1 -type f -name .* ! -name . ! -name ..)",
+      "Bash(find /c/Users/vuvie/Videos/Desktop/projects/webcontainer_v2 -name *.test.ts -type f)",
+      "Bash(npm run:*)",
+      "Bash(xargs grep:*)",
+      "Bash(npm install:*)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(netstat -ano)",
+      "Bash(xargs -I{} taskkill //PID {} //F)"
+    ]
+  }
+}

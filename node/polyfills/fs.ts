@@ -359,6 +359,11 @@ export function createFsPolyfill(vfs: VirtualFS, options: FsPolyfillOptions = {}
         }
       }
 
+      // If VFS has a sync implementation (SAB-backed), use it directly
+      if (vfs.readFileSync) {
+        return vfs.readFileSync(resolved, wantUtf8 ? 'utf8' : undefined)
+      }
+
       if (fileSource && isNodeModulesPath(resolved)) {
         const isPackageJson = resolved.endsWith('/package.json') || resolved.endsWith('package.json')
         if (isPackageJson) {
@@ -418,6 +423,8 @@ export function createFsPolyfill(vfs: VirtualFS, options: FsPolyfillOptions = {}
         for (const k of syncCache.keys()) {
           if (k === resolved || k.startsWith(prefix)) return true
         }
+        // syncCache only has project files — fall through to VFS for node_modules etc.
+        if (vfs.existsSync) return vfs.existsSync(resolved)
         return false
       }
       return vfs.existsSync(resolved)

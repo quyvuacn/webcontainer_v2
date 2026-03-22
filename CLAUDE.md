@@ -17,12 +17,19 @@ npm run build:vfs        # Build WASM VFS only (requires: rustup, wasm-bindgen-c
 # Testing
 npm run test             # Run all tests (Vitest)
 npm run test:watch       # Watch mode
+npm run benchmark        # VFS performance benchmarks
+
+# Run a single test file
+npx vitest run js/vfs_ram.test.ts
+npx vitest run --reporter=verbose node/transform/bare-specifier-rewrite.test.ts
 
 # Environment check
 npm run check-env        # Verify toolchain prerequisites (Rust, wasm-bindgen, etc.)
 ```
 
-The WASM build requires `rustup` and `wasm-bindgen-cli` installed. `npm run check-env` verifies prerequisites.
+The WASM build requires `rustup` and `wasm-bindgen-cli` installed (`cargo install wasm-bindgen-cli`). `npm run check-env` verifies prerequisites.
+
+**Known failing tests:** `node/transform/bare-specifier-rewrite.test.ts` has ~11 failing cases related to VFS_PREFIX import rewriting.
 
 ## Architecture
 
@@ -91,6 +98,17 @@ sw/sw.js / public/sw.js         ← Service Worker: caching, request routing, vi
 - **SharedArrayBuffer** + **Web Workers** + **Service Worker** for multi-threaded execution
 - COOP/COEP headers required for SAB support (configured in `vite.config.ts`)
 
+### VFS_PREFIX Randomization
+
+`npm run build:prod` generates a random `_<4-hex-bytes>_` prefix (e.g. `_a3f1_`) and rewrites all `__r__` sentinel references in built files to that prefix. Override with `VFS_PREFIX=my_prefix npm run build:prod`. This is the obfuscation/hardening mechanism documented in `docs/HARDENING.md`.
+
+### Notable Constraints
+
+- **Tab lock:** `js/main.ts` uses the Navigator.locks API to prevent running in multiple browser tabs simultaneously.
+- **Reported Node version:** The runtime hardcodes `v20.11.0` as its version string (`node/cli.ts`).
+- **Vite dev server:** Files in `js/*.ts` are served transparently as `.js` by a custom Vite middleware, enabling browser ES module imports without a build step.
+- **COOP/COEP headers** are set by Vite for SharedArrayBuffer support — required in all deployment environments.
+
 ### Design Docs
 
-See `docs/master-design.md` for the full architecture diagram, bootstrap sequence, and design rationale. `docs/HARDENING.md` covers the VFS_PREFIX randomization and obfuscation strategy.
+See `docs/master-design.md` for the full architecture diagram, bootstrap sequence, and design rationale. `docs/HARDENING.md` covers the VFS_PREFIX randomization and obfuscation strategy. `docs/HTTP_VIRTUAL_PORT_DESIGN.md` details the SAB communication protocol for virtual TCP.

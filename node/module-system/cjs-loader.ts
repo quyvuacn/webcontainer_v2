@@ -310,13 +310,15 @@ export class CJSLoader {
             const maxFiles = 500
             const walk = async (dir: string): Promise<void> => {
               if (toLoad.length >= maxFiles) return
-              const names = await this.vfs.readdir(dir)
+              let names: string[]
+              try { names = await this.vfs.readdir(dir) } catch { return }
               for (const name of names) {
                 if (toLoad.length >= maxFiles) return
                 if (name === '.' || name === '..') continue
                 const p = PathUtils.join(dir, name)
-                const st = await this.vfs.stat(p)
-                if (st.isDirectory()) await walk(p)
+                let isDir = false
+                try { isDir = (await this.vfs.stat(p)).isDirectory() } catch { /* treat as file */ }
+                if (isDir) await walk(p)
                 else if (!this.syncCache!.has(p)) toLoad.push(p)
               }
             }

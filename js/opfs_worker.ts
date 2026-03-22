@@ -20,7 +20,13 @@ function queueWrite(path: string, fn: () => Promise<unknown>) {
 }
 
 function normalizePath(path: unknown) {
-  return String(path ?? "").replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\//, "")
+  return String(path ?? "")
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\//, "")
+    .split("/")
+    .filter(seg => seg.length > 0 && seg !== ".")
+    .join("/")
 }
 
 function sanitizeName(name: string) {

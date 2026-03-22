@@ -1,4 +1,12 @@
-export async function npmRun(scriptName: string, vfsRead: (p: string) => Uint8Array | null, spawnSyncAsync: (file: string, args: string[], opts: { cwd: string }) => Promise<{ status?: number; stdout: string; stderr: string }>, pkgPath = 'project') {
+import { CDN_BASE } from '../cdn/config'
+
+export async function npmRun(
+  scriptName: string,
+  vfsRead: (p: string) => Uint8Array | null,
+  spawnNode: (args: string[], opts: { cwd: string }) => Promise<number>,
+  pkgPath = 'project',
+  vfsWrite?: (p: string, b: Uint8Array) => void,
+) {
   const pkgBytes = vfsRead(`${pkgPath}/package.json`)
   if (!pkgBytes) throw new Error('No package.json')
   const pkg = JSON.parse(new TextDecoder().decode(pkgBytes))
@@ -6,10 +14,69 @@ export async function npmRun(scriptName: string, vfsRead: (p: string) => Uint8Ar
   const script = scripts[scriptName] ?? (scriptName === 'start' ? scripts.start : null)
   if (!script) throw new Error(`Missing script: ${scriptName}`)
 
-  const m = script.trim().match(/^node\s+(.+)$/)
-  const file = m ? m[1].trim() : null
-  if (!file) throw new Error(`Script "${scriptName}" must be "node <file>"`)
+  // Prefix / so PathUtils.isAbsolute returns true in cli.ts — prevents double-cwd join
+  const abs = (p: string) => p.startsWith('/') ? p : '/' + p
 
-  const filePath = file.startsWith('./') ? `${pkgPath}/${file.slice(2)}` : `${pkgPath}/${file}`
-  return spawnSyncAsync(filePath, [], { cwd: pkgPath })
+  // node <file> [args...]
+  const nodeMatch = script.trim().match(/^node\s+(.+)$/)
+  if (nodeMatch) {
+    const file = nodeMatch[1].trim()
+    const filePath = file.startsWith('./') ? `${pkgPath}/${file.slice(2)}` : `${pkgPath}/${file}`
+    const status = await spawnNode([abs(filePath)], { cwd: pkgPath })
+    return { status }
+  }
+
+  // <bin> [args...] — resolve from node_modules
+  const [cmd, ...cmdArgs] = script.trim().split(/\s+/)
+  const binFile = await resolveBin(cmd, pkgPath, vfsRead, vfsWrite)
+  if (binFile) {
+    const status = await spawnNode([abs(binFile), ...cmdArgs], { cwd: pkgPath })
+    return { status }
+  }
+
+  throw new Error(`Script "${scriptName}" must be "node <file>" or a resolvable bin`)
+}
+
+async function resolveBin(
+  cmd: string,
+  pkgPath: string,
+  vfsRead: (p: string) => Uint8Array | null,
+  vfsWrite?: (p: string, b: Uint8Array) => void,
+): Promise<string | null> {
+  const stubBytes = vfsRead(`${pkgPath}/node_modules/${cmd}/package.json`)
+  if (!stubBytes) return null
+
+  const stub = JSON.parse(new TextDecoder().decode(stubBytes))
+  const version = stub.version
+  if (!version) return null
+
+  try {
+    const r = await fetch(`${CDN_BASE}/${cmd}@${version}/package.json`)
+    if (!r.ok) return null
+    const realPkg = await r.json()
+
+    let binRelPath: string | null = null
+    if (typeof realPkg.bin === 'string') {
+      binRelPath = realPkg.bin
+    } else if (realPkg.bin && typeof realPkg.bin === 'object') {
+      binRelPath = (realPkg.bin[cmd] ?? Object.values(realPkg.bin)[0]) as string | null
+    }
+    if (!binRelPath) return null
+
+    const normalized = binRelPath.startsWith('./') ? binRelPath.slice(2) : binRelPath
+    const vfsFilePath = `${pkgPath}/node_modules/${cmd}/${normalized}`
+
+    if (!vfsRead(vfsFilePath) && vfsWrite) {
+      const fileRes = await fetch(`${CDN_BASE}/${cmd}@${version}/${normalized}`)
+      if (!fileRes.ok) return null
+      let content = await fileRes.text()
+      // Strip shebang
+      if (content.startsWith('#!')) content = content.slice(content.indexOf('\n') + 1)
+      vfsWrite(vfsFilePath, new TextEncoder().encode(content))
+    }
+
+    return vfsFilePath
+  } catch {
+    return null
+  }
 }

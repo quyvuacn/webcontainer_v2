@@ -325,7 +325,7 @@ export const commands: Record<string, (ctx: ShellContext) => Promise<{ exitCode:
     return { exitCode: await spawnNode!(args, { cwd }) }
   },
 
-  npm: async ({ args, cwd, writeln, vfsRead, vfsWrite, vfsAcquireLock, vfsReleaseLock, spawnSyncAsync }) => {
+  npm: async ({ args, cwd, writeln, vfsRead, vfsWrite, vfsAcquireLock, vfsReleaseLock, spawnNode }) => {
     if (!args.length) {
       writeln('npm <install|ci|run|start> [args...]')
       return { exitCode: 0 }
@@ -348,10 +348,8 @@ export const commands: Record<string, (ctx: ShellContext) => Promise<{ exitCode:
           writeln(A.red + 'npm run: missing script name' + A.reset)
           return { exitCode: 1 }
         }
-        if (!spawnSyncAsync) throw new Error('spawnSyncAsync not configured')
-        const result = await npmRun(script, vfsRead!, spawnSyncAsync!, cwd)
-        if (result.stdout) writeln(result.stdout)
-        if (result.stderr) writeln(A.red + result.stderr + A.reset)
+        if (!spawnNode) throw new Error('spawnNode not configured')
+        const result = await npmRun(script, vfsRead!, spawnNode!, cwd, vfsWrite)
         return { exitCode: result.status ?? 1 }
       }
       writeln(A.red + `npm: unknown command ${sub}` + A.reset)

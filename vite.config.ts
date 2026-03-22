@@ -3,10 +3,12 @@ import { defineConfig } from 'vite'
 
 export default defineConfig(() => {
   const vfsPrefix = process.env.VITE_VFS_PREFIX || '__r__'
+  const cdnBase = process.env.VITE_CDN_BASE || 'http://localhost:4873'
   return {
     appType: 'mpa',
     define: {
       'import.meta.env.VITE_VFS_PREFIX': JSON.stringify(vfsPrefix),
+      'import.meta.env.VITE_CDN_BASE': JSON.stringify(cdnBase),
     },
     resolve: {
       extensions: ['.ts', '.tsx', '.mts', '.js', '.jsx', '.mjs', '.json'],

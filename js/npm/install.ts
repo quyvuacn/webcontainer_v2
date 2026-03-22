@@ -11,6 +11,7 @@ export async function npmInstall(vfsRead: (p: string) => Uint8Array | null, vfsW
   const lock = await resolveAll(deps)
   const lockId = vfsAcquireLock(`${pkgPath}/node_modules`)
 
+  // Write placeholder stubs first so the lock is consistent before prefetch
   for (const [path, entry] of Object.entries(lock.packages)) {
     const name = path.replace('node_modules/', '')
     const stub = JSON.stringify({ name, version: entry.version, main: 'index.js' })
@@ -21,8 +22,13 @@ export async function npmInstall(vfsRead: (p: string) => Uint8Array | null, vfsW
     const prefetchResults = await Promise.allSettled(
       Object.entries(lock.packages).map(async ([path, entry]) => {
         const name = path.replace('node_modules/', '')
+        // Skip type-only packages — they have no runtime JS to fetch
+        if (name.startsWith('@types/')) return
         const { entry: entryPath, bytes } = await fetchEntryFromCdn(name, entry.version)
         vfsWrite(`${pkgPath}/${path}/${entryPath}`, bytes)
+        // Update stub so main points to the actual fetched entry path
+        const stub = JSON.stringify({ name, version: entry.version, main: entryPath })
+        vfsWrite(`${pkgPath}/${path}/package.json`, new TextEncoder().encode(stub))
       })
     )
     const failed = prefetchResults.filter((r) => r.status === 'rejected').length

@@ -1,7 +1,8 @@
 import { parseRange, satisfies } from './semver'
+import { CDN_BASE } from '../cdn/config'
 
 async function fetchPackument(name: string) {
-  const r = await fetch(`https://registry.npmjs.org/${name}`)
+  const r = await fetch(`${CDN_BASE}/registry/${name}`)
   if (!r.ok) throw new Error(`npm ERR! ${name}: ${r.status}`)
   return r.json()
 }

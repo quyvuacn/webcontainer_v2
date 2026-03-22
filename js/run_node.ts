@@ -1,6 +1,7 @@
 import { runNode } from '../node/cli'
 import { createVirtualFSAdapter } from '../node/vfs/core/adapter'
-import { registerWorkerVfsPort, setupVirtualPort, teardownVirtualPort } from './main'
+import { registerWorkerVfsPort, setupVirtualPort, teardownVirtualPort, registerSyncVfsChannel } from './main'
+import { createSyncVfsSab } from './lib/sync_vfs_channel'
 
 export type WorkerRefSlot = {
   current: { worker: Worker; resolve: (code: number) => void; children: Worker[] } | null
@@ -150,14 +151,21 @@ export function createNodeRunner(
             const i = ref.children.indexOf(child)
             if (i >= 0) ref.children.splice(i, 1)
           }
+          // SAB sync-VFS channel for child worker
+          const childSyncFsSab = createSyncVfsSab()
+          const { port1: childSyncIn, port2: childSyncOut } = new MessageChannel()
+          registerSyncVfsChannel(childSyncFsSab, childSyncIn)
+
           const wbytes = (globalThis as { __wcEsbuildWasmBytes?: ArrayBuffer }).__wcEsbuildWasmBytes
           const wcopy = wbytes?.slice(0)
-          const t: Transferable[] = [p2, tcpRegC2]
+          const t: Transferable[] = [p2, tcpRegC2, childSyncOut]
           if (wcopy) t.push(wcopy)
           child.postMessage({
             type: 'init',
             vfsPort: p2,
             tcpRegPort: tcpRegC2,
+            syncFsSab: childSyncFsSab,
+            syncFsPort: childSyncOut,
             args: data.args ?? [],
             cwd: data.cwd ?? opts.cwd ?? 'project',
             env: data.env ?? opts.env ?? {},
@@ -177,14 +185,21 @@ export function createNodeRunner(
         cleanup()
         resolve(1)
       }
+      // SAB sync-VFS channel for readFileSync / existsSync
+      const syncFsSab = createSyncVfsSab()
+      const { port1: syncFsIn, port2: syncFsOut } = new MessageChannel()
+      registerSyncVfsChannel(syncFsSab, syncFsIn)
+
       const wasmBytes = (globalThis as { __wcEsbuildWasmBytes?: ArrayBuffer }).__wcEsbuildWasmBytes
       const wasmCopy = wasmBytes?.slice(0)
-      const transfer: Transferable[] = [port2, tcpReg2]
+      const transfer: Transferable[] = [port2, tcpReg2, syncFsOut]
       if (wasmCopy) transfer.push(wasmCopy)
       worker.postMessage({
         type: 'init',
         vfsPort: port2,
         tcpRegPort: tcpReg2,
+        syncFsSab,
+        syncFsPort: syncFsOut,
         args,
         cwd: opts.cwd ?? 'project',
         env: opts.env ?? {},

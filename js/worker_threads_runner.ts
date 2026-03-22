@@ -15,6 +15,7 @@ import type { Stats } from '../node/vfs/core/adapter'
 import { preloadEsbuildWasm } from '../node/transform/esm-to-cjs'
 import { runNode } from '../node/cli'
 import { PathUtils } from '../node/vfs/core/path'
+import { syncRead, syncExists } from './lib/sync_vfs_channel'
 
 let parentPortListeners: ((data: unknown) => void)[] = []
 let workerTerminal: { write: (t: string) => void; writeError?: (t: string) => void } | null = null
@@ -55,7 +56,7 @@ const parentPort = {
   },
 }
 
-function createPortVfs(port: MessagePort) {
+function createPortVfs(port: MessagePort, syncFsSab?: SharedArrayBuffer, syncFsPort?: MessagePort) {
   let id = 0
   const pending = new Map<string, { resolve: (v: unknown) => void }>()
   type PortRes = { id?: string; bytes?: number[] | null; ok?: boolean; names?: string[]; stat?: { isFile: boolean; isDirectory: boolean; size: number; mtime: number } | null }
@@ -113,6 +114,18 @@ function createPortVfs(port: MessagePort) {
       const res = await send('readdir', { path: norm(path) })
       return res.names ?? []
     },
+
+    // Synchronous ops — backed by SAB channel when available
+    ...(syncFsSab && syncFsPort ? {
+      readFileSync(path: string, encoding?: string): string | Uint8Array {
+        const bytes = syncRead(syncFsSab, syncFsPort, norm(path))
+        if (!bytes) throw Object.assign(new Error(`ENOENT: '${path}'`), { code: 'ENOENT' })
+        return (encoding === 'utf8' || encoding === 'utf-8') ? new TextDecoder().decode(bytes) : bytes
+      },
+      existsSync(path: string): boolean {
+        return syncExists(syncFsSab, syncFsPort, norm(path))
+      },
+    } : {}),
   }
 }
 
@@ -204,7 +217,7 @@ function setupTcpRegHook(tcpRegPort: MessagePort) {
   }
 }
 
-async function runInWorker(vfsPort: MessagePort, terminal: { write: (t: string) => void; writeError: (t: string) => void }, args: string[], cwd: string, env: Record<string, string>, wasmBytes?: ArrayBuffer, tcpRegPort?: MessagePort) {
+async function runInWorker(vfsPort: MessagePort, terminal: { write: (t: string) => void; writeError: (t: string) => void }, args: string[], cwd: string, env: Record<string, string>, wasmBytes?: ArrayBuffer, tcpRegPort?: MessagePort, syncFsSab?: SharedArrayBuffer, syncFsPort?: MessagePort) {
   const g = globalThis as Record<string, unknown>
   if (tcpRegPort) setupTcpRegHook(tcpRegPort)
   setupSpawnHook()
@@ -215,7 +228,7 @@ async function runInWorker(vfsPort: MessagePort, terminal: { write: (t: string) 
       await preloadEsbuildWasm()
     }
   }
-  const exitCode = await runNode(args, createPortVfs(vfsPort), terminal, { cwd, env })
+  const exitCode = await runNode(args, createPortVfs(vfsPort, syncFsSab, syncFsPort), terminal, { cwd, env })
   ;(globalThis as { __unregisterVirtualPorts?: () => void }).__unregisterVirtualPorts?.()
   self.postMessage({ type: 'exit', data: exitCode })
 }
@@ -240,8 +253,8 @@ self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: Message
     return
   }
   if (data.type === 'init') {
-    const init = data as { vfsPort?: MessagePort; filename?: string; args?: string[]; workerData?: unknown; cwd?: string; env?: Record<string, string>; threadId?: number; wasmBytes?: ArrayBuffer; tcpRegPort?: MessagePort }
-    const { vfsPort, filename, args, workerData, cwd = '/', env = {}, threadId = 0, wasmBytes, tcpRegPort } = init
+    const init = data as { vfsPort?: MessagePort; filename?: string; args?: string[]; workerData?: unknown; cwd?: string; env?: Record<string, string>; threadId?: number; wasmBytes?: ArrayBuffer; tcpRegPort?: MessagePort; syncFsSab?: SharedArrayBuffer; syncFsPort?: MessagePort }
+    const { vfsPort, filename, args, workerData, cwd = '/', env = {}, threadId = 0, wasmBytes, tcpRegPort, syncFsSab, syncFsPort } = init
     if (!vfsPort) {
       self.postMessage({ type: 'error', data: 'init requires vfsPort' })
       self.postMessage({ type: 'exit', data: 1 })
@@ -256,7 +269,7 @@ self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: Message
 
     if (args) {
       try {
-        await runInWorker(vfsPort, terminal, args, cwd, env, wasmBytes, tcpRegPort)
+        await runInWorker(vfsPort, terminal, args, cwd, env, wasmBytes, tcpRegPort, syncFsSab, syncFsPort)
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         self.postMessage({ type: 'stderr', data: msg + '\n' })
@@ -278,7 +291,7 @@ self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: Message
 
     try {
       const resolvedPath = PathUtils.isAbsolute(filename) ? PathUtils.normalize(filename) : PathUtils.join(cwd, filename)
-      await runInWorker(vfsPort, terminal, [resolvedPath], cwd, env, wasmBytes)
+      await runInWorker(vfsPort, terminal, [resolvedPath], cwd, env, wasmBytes, undefined, syncFsSab, syncFsPort)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       self.postMessage({ type: 'error', data: msg })

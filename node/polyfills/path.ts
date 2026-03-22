@@ -10,7 +10,15 @@ export const path = {
 
   normalize: (p: string) => PathUtils.normalize(p),
   join: (...args: string[]) => PathUtils.join(...args),
-  resolve: (...args: string[]) => PathUtils.resolve(...args),
+  resolve: (...args: string[]) => {
+    // If no absolute path in args, prepend cwd (process.cwd or '/')
+    const hasAbsolute = args.some(a => String(a ?? '').replace(/\\/g, '/').startsWith('/'))
+    if (!hasAbsolute) {
+      const cwd = (globalThis as Record<string, unknown>).process?.cwd?.() ?? '/'
+      return PathUtils.resolve(String(cwd), ...args)
+    }
+    return PathUtils.resolve(...args)
+  },
   dirname: (p: string) => PathUtils.dirname(p),
   basename: (p: string, ext?: string) => PathUtils.basename(p, ext),
   extname: (p: string) => PathUtils.extname(p),

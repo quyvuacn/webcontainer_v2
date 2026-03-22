@@ -4,6 +4,8 @@ import { preloadEsbuildWasm } from '../node/transform/esm-to-cjs'
 import { initOpfsBridge, opfsWrite, opfsDelete, opfsListAll, createBroadcastChannel } from './opfs_bridge'
 import { VFS_PREFIX } from './config'
 import { createCdnVfsProxy } from './cdn/vfs_proxy'
+import { lazyFetchNodeModulesFile, lazyExistsNodeModulesFile } from './cdn/lazy_node_modules'
+import { handleSyncFsRequest } from './lib/sync_vfs_channel'
 
 let vfs: { read: (p: string) => Uint8Array | null; write: (p: string, c: Uint8Array | string) => void; exists: (p: string) => boolean; acquireLock: (p: string) => number; releaseLock: (id: number) => void; delete?: (p: string) => boolean; invalidate?: (p: string) => void; preload?: (p: string, c: Uint8Array) => void } | null = null
 const portHandlers = new Map<number, (req: unknown, res: unknown) => void>()
@@ -52,7 +54,10 @@ function handleVfsPort(port: MessagePort) {
     const path = (data.path ?? '').replace(/^\/+/, '')
     switch (data.op) {
       case 'read': {
-        const bytes = v!.read(path)
+        let bytes = v!.read(path)
+        if (!bytes && path.includes('node_modules/')) {
+          bytes = await lazyFetchNodeModulesFile(path, v!.read.bind(v!), v!.write.bind(v!))
+        }
         port.postMessage({ id: data.id, bytes: bytes ? [...bytes] : null })
         break
       }
@@ -77,7 +82,12 @@ function handleVfsPort(port: MessagePort) {
         break
       }
       case 'exists': {
-        const ok = v!.exists?.(path) ?? (v!.read(path) !== null)
+        let ok = v!.exists?.(path) ?? (v!.read(path) !== null)
+        if (!ok && path.includes('node_modules/')) {
+          // Fetch and cache so subsequent reads work immediately
+          const fetched = await lazyFetchNodeModulesFile(path, v!.read.bind(v!), v!.write.bind(v!))
+          ok = fetched !== null
+        }
         port.postMessage({ id: data.id, ok })
         break
       }
@@ -105,6 +115,31 @@ function handleVfsPort(port: MessagePort) {
 
 export function registerWorkerVfsPort(port: MessagePort) {
   if (vfs) handleVfsPort(port)
+}
+
+/** Register a SAB sync-channel for a worker. The worker sends { type:'sync_vfs' }
+ *  on syncPort when it needs a blocking read/exists, then Atomics.waits on the SAB. */
+export function registerSyncVfsChannel(sab: SharedArrayBuffer, syncPort: MessagePort) {
+  if (!vfs) return
+  const v = vfs
+  const handleRead = async (path: string): Promise<Uint8Array | null> => {
+    const stripped = path.startsWith('/') ? path.slice(1) : path
+    let bytes = v.read(stripped)
+    if (!bytes && stripped.includes('node_modules/')) {
+      bytes = await lazyFetchNodeModulesFile(stripped, v.read.bind(v), v.write.bind(v))
+    }
+    return bytes ?? null
+  }
+  const handleExists = async (path: string): Promise<boolean> => {
+    const stripped = path.startsWith('/') ? path.slice(1) : path
+    if (v.exists(stripped)) return true
+    if (stripped.includes('node_modules/')) {
+      const fetched = await lazyFetchNodeModulesFile(stripped, v.read.bind(v), v.write.bind(v))
+      return fetched !== null
+    }
+    return false
+  }
+  syncPort.onmessage = () => handleSyncFsRequest(sab, handleRead, handleExists)
 }
 
 export function getVfsRead(path: string) {

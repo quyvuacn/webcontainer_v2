@@ -38,14 +38,14 @@ const BUILTIN_NAMED_EXPORTS: Record<string, string[]> = {
   module: ['createRequire', 'createRequireFromPath', 'Module', 'runMain', 'wrap', 'builtinModules', 'isBuiltin'],
 'node:fs': ['promises', 'readFileSync', 'writeFileSync', 'writeSync', 'readFile', 'writeFile', 'open', 'close', 'read', 'write', 'mkdir', 'readdir', 'stat', 'exists', 'constants', 'unlink', 'rmdir', 'rm', 'rename', 'copyFile', 'watch', 'lstat', 'appendFile', 'readlink', 'realpath', 'lstatSync', 'readdirSync', 'readlinkSync', 'realpathSync', 'existsSync', 'statSync', 'mkdirSync', 'unlinkSync', 'rmdirSync'],
     fs: ['promises', 'readFileSync', 'writeFileSync', 'writeSync', 'readFile', 'writeFile', 'open', 'close', 'read', 'write', 'mkdir', 'readdir', 'stat', 'exists', 'constants', 'unlink', 'rmdir', 'rm', 'rename', 'copyFile', 'watch', 'lstat', 'appendFile', 'readlink', 'realpath', 'lstatSync', 'readdirSync', 'readlinkSync', 'realpathSync', 'existsSync', 'statSync', 'mkdirSync', 'unlinkSync', 'rmdirSync'],
-  'node:fs/promises': ['readFile', 'writeFile', 'mkdir', 'readdir', 'stat', 'lstat', 'readlink', 'realpath', 'unlink', 'rm', 'rename', 'copyFile', 'appendFile', 'watch'],
-  'fs/promises': ['readFile', 'writeFile', 'mkdir', 'readdir', 'stat', 'lstat', 'readlink', 'realpath', 'unlink', 'rm', 'rename', 'copyFile', 'appendFile', 'watch'],
+  'node:fs/promises': ['readFile', 'writeFile', 'mkdir', 'readdir', 'stat', 'lstat', 'readlink', 'realpath', 'unlink', 'rm', 'rename', 'copyFile', 'appendFile', 'watch', 'constants'],
+  'fs/promises': ['readFile', 'writeFile', 'mkdir', 'readdir', 'stat', 'lstat', 'readlink', 'realpath', 'unlink', 'rm', 'rename', 'copyFile', 'appendFile', 'watch', 'constants'],
   'node:process': ['env', 'argv', 'argv0', 'stdout', 'stderr', 'stdin', 'pid', 'ppid', 'platform', 'version', 'versions', 'arch', 'execPath', 'execArgv', 'cwd', 'chdir', 'exit', 'nextTick', 'hrtime', 'on', 'off', 'once', 'emit', 'removeListener', 'removeAllListeners', 'uptime', 'memoryUsage', 'cpuUsage', 'kill', 'binding', 'setUncaughtExceptionCaptureCallback', 'hasUncaughtExceptionCaptureCallback'],
   process: ['env', 'argv', 'argv0', 'stdout', 'stderr', 'stdin', 'pid', 'ppid', 'platform', 'version', 'versions', 'arch', 'execPath', 'execArgv', 'cwd', 'chdir', 'exit', 'nextTick', 'hrtime', 'on', 'off', 'once', 'emit', 'removeListener', 'removeAllListeners', 'uptime', 'memoryUsage', 'cpuUsage', 'kill', 'binding', 'setUncaughtExceptionCaptureCallback', 'hasUncaughtExceptionCaptureCallback'],
   'node:os': ['platform', 'arch', 'type', 'release', 'homedir', 'tmpdir', 'hostname', 'cpus', 'totalmem', 'freemem', 'EOL'],
   os: ['platform', 'arch', 'type', 'release', 'homedir', 'tmpdir', 'hostname', 'cpus', 'totalmem', 'freemem', 'EOL'],
-  'node:util': ['promisify', 'inspect', 'format', 'types', 'isArray', 'isRegExp', 'isDate', 'isError', 'inherits', 'deprecate'],
-  util: ['promisify', 'inspect', 'format', 'types', 'isArray', 'isRegExp', 'isDate', 'isError', 'inherits', 'deprecate'],
+  'node:util': ['promisify', 'inspect', 'format', 'types', 'isArray', 'isRegExp', 'isDate', 'isError', 'inherits', 'deprecate', 'stripVTControlCharacters', 'styleText', 'parseArgs', 'getCallSite', 'getSystemErrorName', 'getSystemErrorMap', 'debuglog', 'callbackify', 'TextEncoder', 'TextDecoder'],
+  util: ['promisify', 'inspect', 'format', 'types', 'isArray', 'isRegExp', 'isDate', 'isError', 'inherits', 'deprecate', 'stripVTControlCharacters', 'styleText', 'parseArgs', 'getCallSite', 'getSystemErrorName', 'getSystemErrorMap', 'debuglog', 'callbackify', 'TextEncoder', 'TextDecoder'],
   'node:buffer': ['Buffer', 'Blob', 'kMaxLength', 'transcode', 'constants'],
   buffer: ['Buffer', 'Blob', 'kMaxLength', 'transcode', 'constants'],
   'node:stream': ['Readable', 'Writable', 'Transform', 'Duplex', 'PassThrough', 'Stream', 'EventEmitter', 'pipeline', 'finished'],
@@ -143,6 +143,10 @@ export function createVfsPlugin(
     name: fallback ? 'vfs-bridge' : 'vfs',
     setup(build) {
       build.onResolve({ filter: /.*/ }, async (args) => {
+        // Node.js package.json "imports" field (#-prefixed) — stub as empty module
+        if (args.path.startsWith('#')) {
+          return { path: args.path, namespace: 'wc-stub' }
+        }
         if (isBuiltin(args.path)) {
           return { path: args.path, namespace: 'wc-builtin' }
         }

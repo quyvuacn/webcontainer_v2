@@ -48,6 +48,20 @@ export class PathUtils {
     return i <= 0 ? '' : base.slice(i)
   }
 
+  static resolve(...segments: string[]): string {
+    // Right-to-left: stop at first absolute segment; join with '/' as final fallback
+    const parts: string[] = []
+    let hasAbsolute = false
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = String(segments[i] ?? '').replace(/\\/g, '/')
+      if (!seg) continue
+      parts.unshift(seg)
+      if (seg.startsWith('/')) { hasAbsolute = true; break }
+    }
+    if (!hasAbsolute) parts.unshift('/')
+    return PathUtils.normalize(parts.join('/'))
+  }
+
   static isAbsolute(path: string): boolean {
     return String(path).replace(/\\/g, '/').startsWith('/')
   }
