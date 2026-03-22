@@ -72,7 +72,9 @@ self.addEventListener('message', ({ data, source }) => {
   if (data.type === 'register_port') {
     const port = data.port
     const mainPort = data.mainPort
-    if (mainPort) portMainChannels.set(port, mainPort)
+    if (mainPort) {
+      portMainChannels.set(port, mainPort)
+    }
     if (data.ackPort) { data.ackPort.postMessage('ok'); data.ackPort.close() }
   }
   if (data.type === 'vfs_response') {
@@ -175,7 +177,12 @@ async function handleVirtualTcpViaMain(request, port, mainPort) {
     }
     respIn.onmessageerror = () => { if (!done) { done = true; clearTimeout(td); respIn.close(); reject(new Error('messageerror')) } }
   })
-  mainPort.postMessage({ requestBytes: [...reqBytes], responsePort: respOut }, [respOut])
+  try {
+    mainPort.postMessage({ requestBytes: [...reqBytes], responsePort: respOut }, [respOut])
+  } catch (e) {
+    respIn.close()
+    return Promise.reject(e)
+  }
   return p
 }
 

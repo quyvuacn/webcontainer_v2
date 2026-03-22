@@ -127,7 +127,10 @@ async function processVirtualTcpRequest(port: number, requestBytes: Uint8Array):
   Atomics.store(ctrl, 0, 1)
   Atomics.notify(ctrl, 0)
   const result = Atomics.waitAsync(ctrl, 0, 1)
-  await (result.value ?? Promise.resolve())
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('processVirtualTcpRequest timeout (15s)')), 15000)
+  )
+  await Promise.race([result.value ?? Promise.resolve(), timeout])
   const respLen = Atomics.load(ctrl, 2)
   const respBytes = data.slice(DATA_OFF + requestBytes.length, DATA_OFF + requestBytes.length + respLen)
   Atomics.store(ctrl, 0, 0)
@@ -143,17 +146,18 @@ function sendPortToSw(port: number, swSab: SharedArrayBuffer) {
       const respBytes = await processVirtualTcpRequest(port, reqBytes)
       msg.responsePort.postMessage({ responseBytes: [...respBytes] })
     } catch (e) {
-      msg.responsePort.postMessage({ error: (e as Error)?.message ?? String(e) })
+      try { msg.responsePort.postMessage({ error: (e as Error)?.message ?? String(e) }) } catch {}
     }
-    msg.responsePort.close()
+    try { msg.responsePort.close() } catch {}
   }
-  const ctrl = navigator.serviceWorker.controller
   const { port1: ackIn, port2: ackOut } = new MessageChannel()
   ackIn.onmessage = () => {
     ackIn.close?.()
     window.dispatchEvent(new CustomEvent('port-registered', { detail: { port } }))
   }
-  ctrl?.postMessage({ type: 'register_port', port, mainPort: swPort, ackPort: ackOut }, [swPort, ackOut])
+  const ctrl = navigator.serviceWorker.controller
+  const post = (sw: ServiceWorker | null) => sw?.postMessage({ type: 'register_port', port, mainPort: swPort, ackPort: ackOut }, [swPort, ackOut])
+  ctrl ? post(ctrl) : navigator.serviceWorker.getRegistration().then((r) => post(r?.active ?? null))
 }
 
 export function setupVirtualPort(port: number, handler: (req: unknown, res: unknown) => void) {
