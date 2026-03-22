@@ -74,7 +74,10 @@ export function vfs_remove_prefix(prefix: string): void;
  * `write_fn(path: string, bytes: Uint8Array) → void`
  * `delete_fn(path: string) → void`
  */
-export function vfs_set_opfs_callbacks(write_fn: Function, delete_fn: Function): void;
+export function vfs_set_opfs_callbacks(
+  write_fn: Function,
+  delete_fn: Function,
+): void;
 
 /**
  * Stat `path`. Returns a JS object `{ size, mtime, is_file, is_dir }`,
@@ -95,7 +98,11 @@ export function vfs_unwatch(id: bigint): boolean;
  *
  * Returns a numeric WatcherId. Pass it to `vfs_unwatch` to remove.
  */
-export function vfs_watch(path: string, recursive: boolean, callback: Function): bigint;
+export function vfs_watch(
+  path: string,
+  recursive: boolean,
+  callback: Function,
+): bigint;
 
 /**
  * Write `content` bytes to `path`.
@@ -107,31 +114,41 @@ export function vfs_watch(path: string, recursive: boolean, callback: Function):
  */
 export function vfs_write(path: string, content: Uint8Array): void;
 
-export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
+export type InitInput =
+  | RequestInfo
+  | URL
+  | Response
+  | BufferSource
+  | WebAssembly.Module;
 
 export interface InitOutput {
-    readonly memory: WebAssembly.Memory;
-    readonly vfs_acquire_lock: (a: number, b: number) => bigint;
-    readonly vfs_delete: (a: number, b: number) => number;
-    readonly vfs_exists: (a: number, b: number) => number;
-    readonly vfs_invalidate: (a: number, b: number) => void;
-    readonly vfs_list_all_paths: () => number;
-    readonly vfs_mkdir: (a: number, b: number) => void;
-    readonly vfs_preload: (a: number, b: number, c: number, d: number) => void;
-    readonly vfs_read: (a: number, b: number, c: number) => void;
-    readonly vfs_readdir: (a: number, b: number) => number;
-    readonly vfs_release_lock: (a: bigint) => void;
-    readonly vfs_remove_prefix: (a: number, b: number) => void;
-    readonly vfs_set_opfs_callbacks: (a: number, b: number) => void;
-    readonly vfs_stat: (a: number, b: number) => number;
-    readonly vfs_unwatch: (a: bigint) => number;
-    readonly vfs_watch: (a: number, b: number, c: number, d: number) => bigint;
-    readonly vfs_write: (a: number, b: number, c: number, d: number) => void;
-    readonly __wbindgen_export: (a: number) => void;
-    readonly __wbindgen_export2: (a: number, b: number) => number;
-    readonly __wbindgen_export3: (a: number, b: number, c: number, d: number) => number;
-    readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
-    readonly __wbindgen_export4: (a: number, b: number, c: number) => void;
+  readonly memory: WebAssembly.Memory;
+  readonly vfs_acquire_lock: (a: number, b: number) => bigint;
+  readonly vfs_delete: (a: number, b: number) => number;
+  readonly vfs_exists: (a: number, b: number) => number;
+  readonly vfs_invalidate: (a: number, b: number) => void;
+  readonly vfs_list_all_paths: () => number;
+  readonly vfs_mkdir: (a: number, b: number) => void;
+  readonly vfs_preload: (a: number, b: number, c: number, d: number) => void;
+  readonly vfs_read: (a: number, b: number, c: number) => void;
+  readonly vfs_readdir: (a: number, b: number) => number;
+  readonly vfs_release_lock: (a: bigint) => void;
+  readonly vfs_remove_prefix: (a: number, b: number) => void;
+  readonly vfs_set_opfs_callbacks: (a: number, b: number) => void;
+  readonly vfs_stat: (a: number, b: number) => number;
+  readonly vfs_unwatch: (a: bigint) => number;
+  readonly vfs_watch: (a: number, b: number, c: number, d: number) => bigint;
+  readonly vfs_write: (a: number, b: number, c: number, d: number) => void;
+  readonly __wbindgen_export: (a: number) => void;
+  readonly __wbindgen_export2: (a: number, b: number) => number;
+  readonly __wbindgen_export3: (
+    a: number,
+    b: number,
+    c: number,
+    d: number,
+  ) => number;
+  readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
+  readonly __wbindgen_export4: (a: number, b: number, c: number) => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;
@@ -144,7 +161,9 @@ export type SyncInitInput = BufferSource | WebAssembly.Module;
  *
  * @returns {InitOutput}
  */
-export function initSync(module: { module: SyncInitInput } | SyncInitInput): InitOutput;
+export function initSync(
+  module: { module: SyncInitInput } | SyncInitInput,
+): InitOutput;
 
 /**
  * If `module_or_path` is {RequestInfo} or {URL}, makes a request and
@@ -154,4 +173,9 @@ export function initSync(module: { module: SyncInitInput } | SyncInitInput): Ini
  *
  * @returns {Promise<InitOutput>}
  */
-export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;
+export default function __wbg_init(
+  module_or_path?:
+    | { module_or_path: InitInput | Promise<InitInput> }
+    | InitInput
+    | Promise<InitInput>,
+): Promise<InitOutput>;

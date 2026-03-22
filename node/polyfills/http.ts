@@ -172,29 +172,37 @@ export class HttpServer extends EventEmitter {
     if (this._port > 0 && this._handler && typeof setup === "function") {
       try {
         const result = setup(this._port, this._handler);
-        if (result && typeof (result as Promise<() => void>).then === "function") {
+        if (
+          result &&
+          typeof (result as Promise<() => void>).then === "function"
+        ) {
           (result as Promise<() => void>)
             .then((release: unknown) => {
-              if (typeof release === "function") this._releaseHandle = release as () => void;
+              if (typeof release === "function")
+                this._releaseHandle = release as () => void;
               cb?.();
               this.emit("listening");
             })
             .catch((e: unknown) => {
               this.emit("error", e);
               (cb as ((err?: Error) => void) | undefined)?.(e as Error);
-              if (this.listenerCount("error") === 0 && (!cb || cb.length === 0)) throw e;
+              if (this.listenerCount("error") === 0 && (!cb || cb.length === 0))
+                throw e;
             });
           return this;
         }
-        if (typeof result === "function") this._releaseHandle = result as () => void;
+        if (typeof result === "function")
+          this._releaseHandle = result as () => void;
       } catch (e) {
         this.emit("error", e);
         (cb as ((err?: Error) => void) | undefined)?.(e as Error);
-        if (this.listenerCount("error") === 0 && (!cb || cb.length === 0)) throw e;
+        if (this.listenerCount("error") === 0 && (!cb || cb.length === 0))
+          throw e;
         return this;
       }
     }
-    if (this._handler && !this._releaseHandle) this._releaseHandle = addActiveHandle();
+    if (this._handler && !this._releaseHandle)
+      this._releaseHandle = addActiveHandle();
 
     queueMicrotask(() => {
       cb?.();
@@ -254,10 +262,11 @@ class ClientRequest extends EventEmitter {
   }
 
   write(chunk: string | Uint8Array, _enc?: string, cb?: () => void): boolean {
-    const buf =
-      Buffer.isBuffer(chunk) ? chunk :
-      typeof chunk === "string" ? Buffer.from(chunk) :
-      Buffer.from(chunk);
+    const buf = Buffer.isBuffer(chunk)
+      ? chunk
+      : typeof chunk === "string"
+        ? Buffer.from(chunk)
+        : Buffer.from(chunk);
     this._chunks.push(buf);
     cb?.();
     return true;

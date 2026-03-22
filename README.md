@@ -32,6 +32,7 @@ npm run check-env        # Check toolchain
 ```
 
 WASM build (Phase 6):
+
 - Requires: Rust, `cargo install wasm-bindgen-cli`
 - Output: `public/runtime/vfs_ram.js`, `public/runtime/vfs_ram_bg.wasm`
 - If build fails, app falls back to JS RamVfs automatically
@@ -44,16 +45,16 @@ npm run test
 
 45 test cases, cover toàn bộ core logic:
 
-| File | Tests |
-|------|-------|
-| js/vfs_ram.js | 8 |
-| js/npm/semver.js | 13 |
-| js/npm/resolver.js | 3 (mock fetch) |
-| js/npm/install.js | 4 |
-| js/http_serialize.js | 4 |
-| js/cdn/resolver.js | 5 |
-| js/cdn/vfs_proxy.js | 4 |
-| js/lib/sab_buffer.js | 4 |
+| File                 | Tests          |
+| -------------------- | -------------- |
+| js/vfs_ram.js        | 8              |
+| js/npm/semver.js     | 13             |
+| js/npm/resolver.js   | 3 (mock fetch) |
+| js/npm/install.js    | 4              |
+| js/http_serialize.js | 4              |
+| js/cdn/resolver.js   | 5              |
+| js/cdn/vfs_proxy.js  | 4              |
+| js/lib/sab_buffer.js | 4              |
 
 ### Cấu trúc
 

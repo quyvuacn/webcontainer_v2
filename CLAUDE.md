@@ -70,21 +70,25 @@ sw/sw.js / public/sw.js         ← Service Worker: caching, request routing, vi
 ### Key Subsystems
 
 **Virtual File System (VFS):**
+
 - `js/vfs_ram.ts` — in-memory FS with watches, locks, file metadata
 - `js/vfs_wasm.ts` — WASM VFS init; falls back to RamVfs if WASM unavailable
 - `src/vfs_ram.rs`, `src/lock.rs`, `src/watcher.rs` — Rust implementations compiled to WASM
 
 **Shell:**
+
 - `js/shell/shell.ts` — command executor
 - `js/shell/commands.ts` — built-in commands (ls, cat, cd, etc.)
 - `js/shell/parser.ts` — command line parsing
 
 **Package Management:**
+
 - `js/npm/install.ts`, `js/npm/ci.ts` — npm install/ci
 - `js/npm/resolver.ts` — version resolution
 - `js/cdn/resolver.ts` — CDN package resolution
 
 **Virtual Networking:**
+
 - `js/tcp_worker.ts` — virtual TCP via SAB spin loop
 - `js/http_serialize.ts` — HTTP request/response serialization
 - `sw/sw.js` — routes HTTP requests through virtual TCP

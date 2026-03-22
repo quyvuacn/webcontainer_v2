@@ -7,7 +7,7 @@ export function createV8Polyfill(): Record<string, unknown> {
     getHeapStatistics: () => ({}),
     getHeapSpaceStatistics: () => [],
     getHeapSnapshot: () => ({}),
-    writeHeapSnapshot: () => '',
+    writeHeapSnapshot: () => "",
     getHeapCodeStatistics: () => ({}),
     setFlagsFromString: () => {},
     serialize: () => new ArrayBuffer(0),
@@ -18,5 +18,5 @@ export function createV8Polyfill(): Record<string, unknown> {
     Deserializer: class {},
     DefaultDeserializer: class {},
     DefaultSerializer: class {},
-  }
+  };
 }

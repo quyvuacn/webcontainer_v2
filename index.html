@@ -1,199 +1,227 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="vi">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Browser Node Shell</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%;
-      height: 100%;
-      background: #0d1117;
-      overflow: hidden;
-    }
-    #app {
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-    }
-    #titlebar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 16px;
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
-      user-select: none;
-      flex-shrink: 0;
-    }
-    .dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-    }
-    .dot-red { background: #ff5f56; }
-    .dot-yellow { background: #ffbd2e; }
-    .dot-green { background: #27c93f; }
-    #title {
-      flex: 1;
-      text-align: center;
-      color: #8b949e;
-      font-family: 'Cascadia Code', 'Fira Code', monospace;
-      font-size: 13px;
-    }
-    #tabs {
-      display: flex;
-      align-items: center;
-      gap: 2px;
-      padding: 0 12px;
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
-      min-height: 36px;
-      flex-shrink: 0;
-    }
-    .tab {
-      padding: 6px 12px;
-      color: #8b949e;
-      font-size: 12px;
-      font-family: monospace;
-      cursor: pointer;
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .tab:hover { background: #21262d; color: #c9d1d9; }
-    .tab.active { background: #0d1117; color: #58a6ff; border-bottom: 2px solid #0d1117; margin-bottom: -1px; }
-    .tab-close {
-      padding: 0 4px;
-      opacity: 0.6;
-      font-size: 14px;
-      line-height: 1;
-    }
-    .tab-close:hover { opacity: 1; color: #f85149; }
-    .tab-add {
-      padding: 4px 10px;
-      color: #8b949e;
-      font-size: 16px;
-      background: none;
-      border: none;
-      cursor: pointer;
-      border-radius: 4px;
-    }
-    .tab-add:hover { background: #21262d; color: #58a6ff; }
-    #main-pane {
-      flex: 1;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-    }
-    #preview-pane {
-      flex: 1;
-      min-height: 200px;
-      display: flex;
-      flex-direction: column;
-      border-bottom: 1px solid #30363d;
-    }
-    #preview-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 12px;
-      background: #161b22;
-      font-size: 12px;
-      font-family: monospace;
-      color: #8b949e;
-    }
-    #preview-bar select {
-      padding: 4px 8px;
-      background: #21262d;
-      color: #58a6ff;
-      border: 1px solid #30363d;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    #preview-bar input {
-      flex: 1;
-      min-width: 120px;
-      padding: 4px 10px;
-      background: #21262d;
-      color: #c9d1d9;
-      border: 1px solid #30363d;
-      border-radius: 4px;
-      font-size: 12px;
-      font-family: monospace;
-    }
-    #preview-bar input:focus {
-      outline: none;
-      border-color: #58a6ff;
-    }
-    #preview-bar button {
-      padding: 4px 10px;
-      background: #21262d;
-      color: #58a6ff;
-      border: 1px solid #30363d;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-    }
-    #preview-bar button:hover {
-      background: #30363d;
-    }
-    #preview-iframe {
-      flex: 1;
-      min-height: 150px;
-      border: none;
-      background: #0d1117;
-    }
-    #terminal-wrapper {
-      flex: 0 0 320px;
-      min-height: 200px;
-      padding: 12px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-    .terminal-panel {
-      flex: 1;
-      min-height: 0;
-      display: none;
-    }
-    .terminal-panel.active {
-      display: flex;
-      flex-direction: column;
-    }
-    .terminal-panel .terminal-el {
-      flex: 1;
-      min-height: 0;
-    }
-  </style>
-</head>
-<body>
-  <div id="app">
-    <div id="titlebar">
-      <div class="dot dot-red"></div>
-      <div class="dot dot-yellow"></div>
-      <div class="dot dot-green"></div>
-      <span id="title">Browser Node — Virtual Shell</span>
-    </div>
-    <div id="tabs"></div>
-    <div id="main-pane">
-      <div id="preview-pane">
-        <div id="preview-bar">
-          <span>Preview</span>
-          <select id="preview-port">
-            <option value="5173">:5173</option>
-          </select>
-          <input id="preview-url" type="text" placeholder="/" value="/" />
-          <button id="preview-reload">Reload</button>
-          <span id="preview-status" style="color:#8b949e;font-size:11px"></span>
-        </div>
-        <iframe id="preview-iframe" title="Preview"></iframe>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser Node Shell</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        background: #0d1117;
+        overflow: hidden;
+      }
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      #titlebar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+        user-select: none;
+        flex-shrink: 0;
+      }
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+      .dot-red {
+        background: #ff5f56;
+      }
+      .dot-yellow {
+        background: #ffbd2e;
+      }
+      .dot-green {
+        background: #27c93f;
+      }
+      #title {
+        flex: 1;
+        text-align: center;
+        color: #8b949e;
+        font-family: "Cascadia Code", "Fira Code", monospace;
+        font-size: 13px;
+      }
+      #tabs {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 0 12px;
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+        min-height: 36px;
+        flex-shrink: 0;
+      }
+      .tab {
+        padding: 6px 12px;
+        color: #8b949e;
+        font-size: 12px;
+        font-family: monospace;
+        cursor: pointer;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .tab:hover {
+        background: #21262d;
+        color: #c9d1d9;
+      }
+      .tab.active {
+        background: #0d1117;
+        color: #58a6ff;
+        border-bottom: 2px solid #0d1117;
+        margin-bottom: -1px;
+      }
+      .tab-close {
+        padding: 0 4px;
+        opacity: 0.6;
+        font-size: 14px;
+        line-height: 1;
+      }
+      .tab-close:hover {
+        opacity: 1;
+        color: #f85149;
+      }
+      .tab-add {
+        padding: 4px 10px;
+        color: #8b949e;
+        font-size: 16px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        border-radius: 4px;
+      }
+      .tab-add:hover {
+        background: #21262d;
+        color: #58a6ff;
+      }
+      #main-pane {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      #preview-pane {
+        flex: 1;
+        min-height: 200px;
+        display: flex;
+        flex-direction: column;
+        border-bottom: 1px solid #30363d;
+      }
+      #preview-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        background: #161b22;
+        font-size: 12px;
+        font-family: monospace;
+        color: #8b949e;
+      }
+      #preview-bar select {
+        padding: 4px 8px;
+        background: #21262d;
+        color: #58a6ff;
+        border: 1px solid #30363d;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #preview-bar input {
+        flex: 1;
+        min-width: 120px;
+        padding: 4px 10px;
+        background: #21262d;
+        color: #c9d1d9;
+        border: 1px solid #30363d;
+        border-radius: 4px;
+        font-size: 12px;
+        font-family: monospace;
+      }
+      #preview-bar input:focus {
+        outline: none;
+        border-color: #58a6ff;
+      }
+      #preview-bar button {
+        padding: 4px 10px;
+        background: #21262d;
+        color: #58a6ff;
+        border: 1px solid #30363d;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      #preview-bar button:hover {
+        background: #30363d;
+      }
+      #preview-iframe {
+        flex: 1;
+        min-height: 150px;
+        border: none;
+        background: #0d1117;
+      }
+      #terminal-wrapper {
+        flex: 0 0 320px;
+        min-height: 200px;
+        padding: 12px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .terminal-panel {
+        flex: 1;
+        min-height: 0;
+        display: none;
+      }
+      .terminal-panel.active {
+        display: flex;
+        flex-direction: column;
+      }
+      .terminal-panel .terminal-el {
+        flex: 1;
+        min-height: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="titlebar">
+        <div class="dot dot-red"></div>
+        <div class="dot dot-yellow"></div>
+        <div class="dot dot-green"></div>
+        <span id="title">Browser Node — Virtual Shell</span>
       </div>
-      <div id="terminal-wrapper"></div>
+      <div id="tabs"></div>
+      <div id="main-pane">
+        <div id="preview-pane">
+          <div id="preview-bar">
+            <span>Preview</span>
+            <select id="preview-port">
+              <option value="5173">:5173</option>
+            </select>
+            <input id="preview-url" type="text" placeholder="/" value="/" />
+            <button id="preview-reload">Reload</button>
+            <span
+              id="preview-status"
+              style="color: #8b949e; font-size: 11px"
+            ></span>
+          </div>
+          <iframe id="preview-iframe" title="Preview"></iframe>
+        </div>
+        <div id="terminal-wrapper"></div>
+      </div>
     </div>
-  </div>
-  <script type="module" src="/js/app.ts"></script>
-</body>
+    <script type="module" src="/js/app.ts"></script>
+  </body>
 </html>

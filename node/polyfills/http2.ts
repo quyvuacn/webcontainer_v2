@@ -11,11 +11,11 @@ export function createHttp2Polyfill(): Record<string, unknown> {
     getDefaultSettings: () => ({}),
     getPackedSettings: () => new Uint8Array(0),
     getUnpackedSettings: () => ({}),
-    sensitiveHeaders: Symbol(''),
+    sensitiveHeaders: Symbol(""),
     Http2Session: class {},
     ServerHttp2Session: class {},
     Http2Stream: class {},
     Http2Server: class {},
     Http2SecureServer: class {},
-  }
+  };
 }

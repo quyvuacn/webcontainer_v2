@@ -8,13 +8,14 @@ Dựa trên thiết kế trong `docs/master-design.md`. Tài liệu này mô t�
 
 ### 1.1 Node.js
 
-| Mục | Chi tiết |
-|-----|----------|
-| Phiên bản | >= 18.3.0 (yêu cầu bởi Emscripten) |
-| Khuyến nghị | 20 LTS hoặc 22 LTS |
-| Dùng cho | Build scripts, npm, dev server, test runner |
+| Mục         | Chi tiết                                    |
+| ----------- | ------------------------------------------- |
+| Phiên bản   | >= 18.3.0 (yêu cầu bởi Emscripten)          |
+| Khuyến nghị | 20 LTS hoặc 22 LTS                          |
+| Dùng cho    | Build scripts, npm, dev server, test runner |
 
 **Cài đặt:**
+
 - Windows: [nodejs.org](https://nodejs.org) hoặc `winget install OpenJS.NodeJS.LTS`
 - Linux: `nvm install 20` hoặc `sudo apt install nodejs`
 - Kiểm tra: `node -v`, `npm -v`
@@ -23,11 +24,11 @@ Dựa trên thiết kế trong `docs/master-design.md`. Tài liệu này mô t�
 
 ### 1.2 Python
 
-| Mục | Chi tiết |
-|-----|----------|
-| Phiên bản | >= 3.8 (Emscripten requirement) |
-| Khuyến nghị | 3.11+ |
-| Dùng cho | emsdk, build scripts |
+| Mục         | Chi tiết                        |
+| ----------- | ------------------------------- |
+| Phiên bản   | >= 3.8 (Emscripten requirement) |
+| Khuyến nghị | 3.11+                           |
+| Dùng cho    | emsdk, build scripts            |
 
 **Kiểm tra:** `python3 --version`
 
@@ -35,8 +36,8 @@ Dựa trên thiết kế trong `docs/master-design.md`. Tài liệu này mô t�
 
 ### 1.3 Git
 
-| Mục | Chi tiết |
-|-----|----------|
+| Mục      | Chi tiết                            |
+| -------- | ----------------------------------- |
 | Dùng cho | Clone emsdk, node-src, dependencies |
 
 **Kiểm tra:** `git --version`
@@ -47,11 +48,11 @@ Dựa trên thiết kế trong `docs/master-design.md`. Tài liệu này mô t�
 
 Emscripten cần compiler native tương ứng OS:
 
-| OS | Toolchain |
-|----|-----------|
-| Windows | Visual Studio 2017+ (Build Tools) + CMake |
-| Linux | gcc, g++, make, cmake (`build-essential cmake`) |
-| macOS | Xcode Command Line Tools |
+| OS      | Toolchain                                       |
+| ------- | ----------------------------------------------- |
+| Windows | Visual Studio 2017+ (Build Tools) + CMake       |
+| Linux   | gcc, g++, make, cmake (`build-essential cmake`) |
+| macOS   | Xcode Command Line Tools                        |
 
 **Windows:** Cài [Build Tools for Visual Studio](https://visualstudio.microsoft.com/visual-cpp-build-tools/) với workload "Desktop development with C++"
 
@@ -63,17 +64,19 @@ Emscripten cần compiler native tương ứng OS:
 
 ### 1.5 Rust
 
-| Mục | Chi tiết |
-|-----|----------|
-| Dùng cho | VFS Ram, npm resolver, CDN resolver (src/) |
+| Mục         | Chi tiết                                                             |
+| ----------- | -------------------------------------------------------------------- |
+| Dùng cho    | VFS Ram, npm resolver, CDN resolver (src/)                           |
 | wasm target | wasm32-unknown-emscripten hoặc wasm32-unknown-unknown + wasm-bindgen |
 
 **Cài đặt:**
+
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 **Thêm wasm target:**
+
 ```bash
 rustup target add wasm32-unknown-emscripten   # nếu link với Emscripten
 # hoặc
@@ -81,6 +84,7 @@ rustup target add wasm32-unknown-unknown      # nếu dùng wasm-bindgen
 ```
 
 **Công cụ bổ sung:**
+
 - `wasm-bindgen-cli`: `cargo install wasm-bindgen-cli`
 - `wasm-pack` (tùy chọn): `cargo install wasm-pack`
 
@@ -90,12 +94,13 @@ rustup target add wasm32-unknown-unknown      # nếu dùng wasm-bindgen
 
 ### 1.6 Emscripten SDK
 
-| Mục | Chi tiết |
-|-----|----------|
-| Dùng cho | Compile Node.js C++ patches → WASM |
-| Phiên bản | latest (hoặc 3.1.x trở lên) |
+| Mục       | Chi tiết                           |
+| --------- | ---------------------------------- |
+| Dùng cho  | Compile Node.js C++ patches → WASM |
+| Phiên bản | latest (hoặc 3.1.x trở lên)        |
 
 **Cài đặt:**
+
 ```bash
 git clone https://github.com/emscripten-core/emsdk.git
 cd emsdk
@@ -111,10 +116,10 @@ source ./emsdk_env.sh   # Linux/macOS
 
 ### 1.7 Binaryen (wasm-opt)
 
-| Mục | Chi tiết |
-|-----|----------|
-| Dùng cho | Optimize WASM: `wasm-opt -Oz --strip-debug --strip-producers` |
-| Có sẵn trong | Emscripten SDK (thường đã cài) |
+| Mục          | Chi tiết                                                      |
+| ------------ | ------------------------------------------------------------- |
+| Dùng cho     | Optimize WASM: `wasm-opt -Oz --strip-debug --strip-producers` |
+| Có sẵn trong | Emscripten SDK (thường đã cài)                                |
 
 **Kiểm tra:** `wasm-opt --version`
 
@@ -137,15 +142,15 @@ git clone --depth 1 https://github.com/nodejs/node.git node-src
 
 ### 1.9 Tóm tắt kiểm tra môi trường
 
-| Công cụ | Lệnh kiểm tra |
-|---------|---------------|
-| Node.js | `node -v` |
-| npm | `npm -v` |
-| Python | `python3 --version` |
-| Git | `git --version` |
-| Rust | `rustc -V` |
-| Cargo | `cargo -V` |
-| emcc | `emcc --version` |
+| Công cụ  | Lệnh kiểm tra        |
+| -------- | -------------------- |
+| Node.js  | `node -v`            |
+| npm      | `npm -v`             |
+| Python   | `python3 --version`  |
+| Git      | `git --version`      |
+| Rust     | `rustc -V`           |
+| Cargo    | `cargo -V`           |
+| emcc     | `emcc --version`     |
 | wasm-opt | `wasm-opt --version` |
 
 ---
@@ -182,7 +187,7 @@ browser-node/
 
 ### Phase 2 — Virtual TCP + Handler Worker (3 tuần) [DONE]
 
-- [x] Path /__port__/N/ (dev), subdomain cho prod
+- [x] Path /**port**/N/ (dev), subdomain cho prod
 - [x] SAB pipe + timeout 30s
 - [x] TCP Worker spin loop
 - [x] Handler Worker (stub, chưa Node WASM)
@@ -257,15 +262,15 @@ check wasm-opt
 
 ## 5. Dependency và thứ tự thực hiện
 
-| Thứ tự | Công cụ | Phụ thuộc |
-|--------|---------|-----------|
-| 1 | Git | - |
-| 2 | Python 3 | - |
-| 3 | Node.js | - |
-| 4 | C++ toolchain (gcc/VS) | - |
-| 5 | Rust (rustup) | - |
-| 6 | emsdk | Git, Python, Node.js, C++ |
-| 7 | node-src | Git |
+| Thứ tự | Công cụ                | Phụ thuộc                 |
+| ------ | ---------------------- | ------------------------- |
+| 1      | Git                    | -                         |
+| 2      | Python 3               | -                         |
+| 3      | Node.js                | -                         |
+| 4      | C++ toolchain (gcc/VS) | -                         |
+| 5      | Rust (rustup)          | -                         |
+| 6      | emsdk                  | Git, Python, Node.js, C++ |
+| 7      | node-src               | Git                       |
 
 ---
 

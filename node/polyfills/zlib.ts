@@ -15,53 +15,58 @@ import {
   Gunzip as FGunzip,
   Deflate as FDeflate,
   Inflate as FInflate,
-} from 'fflate'
-import { Transform } from 'readable-stream'
+} from "fflate";
+import { Transform } from "readable-stream";
 
-type Callback = (err: Error | null, result: Buffer) => void
+type Callback = (err: Error | null, result: Buffer) => void;
 
 function toUint8(buf: Uint8Array | Buffer): Uint8Array {
-  return buf instanceof Uint8Array ? buf : new Uint8Array(buf)
+  return buf instanceof Uint8Array ? buf : new Uint8Array(buf);
 }
 
 type FflateClass = new () => {
-  push(data: Uint8Array, final?: boolean): void
-  ondata: ((data: Uint8Array, final: boolean) => void) | null
-}
+  push(data: Uint8Array, final?: boolean): void;
+  ondata: ((data: Uint8Array, final: boolean) => void) | null;
+};
 
 function makeTransform(FClass: FflateClass): InstanceType<typeof Transform> {
-  const compressor = new FClass()
+  const compressor = new FClass();
   const t = new Transform({
     transform(chunk: Buffer, _enc: string, cb: (err?: Error | null) => void) {
       try {
-        compressor.push(toUint8(chunk))
-        cb()
+        compressor.push(toUint8(chunk));
+        cb();
       } catch (e) {
-        cb(e as Error)
+        cb(e as Error);
       }
     },
     flush(cb: (err?: Error | null) => void) {
       try {
-        compressor.push(new Uint8Array(0), true)
-        cb()
+        compressor.push(new Uint8Array(0), true);
+        cb();
       } catch (e) {
-        cb(e as Error)
+        cb(e as Error);
       }
     },
-  })
+  });
   compressor.ondata = (data: Uint8Array, _final: boolean) => {
-    t.push(Buffer.from(data))
-  }
-  return t
+    t.push(Buffer.from(data));
+  };
+  return t;
 }
 
 function wrapAsync(
-  fn: (data: Uint8Array, cb: (err: Error | null, result: Uint8Array) => void) => void,
+  fn: (
+    data: Uint8Array,
+    cb: (err: Error | null, result: Uint8Array) => void,
+  ) => void,
 ) {
   return (buf: Uint8Array, optsOrCb?: unknown, cb?: Callback) => {
-    const callback = (typeof optsOrCb === 'function' ? optsOrCb : cb) as Callback
-    fn(toUint8(buf), (err, result) => callback(err, Buffer.from(result)))
-  }
+    const callback = (
+      typeof optsOrCb === "function" ? optsOrCb : cb
+    ) as Callback;
+    fn(toUint8(buf), (err, result) => callback(err, Buffer.from(result)));
+  };
 }
 
 export function createZlibPolyfill(): Record<string, unknown> {
@@ -94,5 +99,5 @@ export function createZlibPolyfill(): Record<string, unknown> {
       Z_DEFAULT_COMPRESSION: -1,
       Z_DEFAULT_STRATEGY: 0,
     },
-  }
+  };
 }

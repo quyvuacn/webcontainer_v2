@@ -1,2 +1,2 @@
-export { PathUtils } from './path'
-export type { VirtualFS } from './adapter'
+export { PathUtils } from "./path";
+export type { VirtualFS } from "./adapter";

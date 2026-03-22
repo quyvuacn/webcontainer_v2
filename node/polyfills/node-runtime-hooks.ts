@@ -37,9 +37,15 @@ export interface NodeRuntimeHooksOptions {
  * Optionally registers the port (main thread only — Worker has no TCP).
  */
 export function createSetupVirtualPortHook(
-  register?: (port: number, handler: (req: unknown, res: unknown) => void) => void,
+  register?: (
+    port: number,
+    handler: (req: unknown, res: unknown) => void,
+  ) => void,
 ) {
-  return (port: number, handler: (req: unknown, res: unknown) => void): (() => void) => {
+  return (
+    port: number,
+    handler: (req: unknown, res: unknown) => void,
+  ): (() => void) => {
     const release = addActiveHandle();
     register?.(port, handler);
     return release;

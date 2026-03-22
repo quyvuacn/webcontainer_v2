@@ -47,7 +47,10 @@ export class WorkerThreadWorker extends EventEmitter {
         filename,
         options.workerData ?? null,
         this.threadId,
-        { cwd: options.cwd as string | undefined, env: options.env as Record<string, string> | undefined },
+        {
+          cwd: options.cwd as string | undefined,
+          env: options.env as Record<string, string> | undefined,
+        },
       );
       this._webWorker = webWorker;
 
@@ -60,10 +63,18 @@ export class WorkerThreadWorker extends EventEmitter {
         } else if (type === "exit") {
           this.emit("exit", data ?? 0);
         } else if (type === "stdout") {
-          const p = (globalThis as unknown as { process?: { stdout?: { write?: (s: string) => void } } }).process;
+          const p = (
+            globalThis as unknown as {
+              process?: { stdout?: { write?: (s: string) => void } };
+            }
+          ).process;
           p?.stdout?.write?.(data);
         } else if (type === "stderr") {
-          const p = (globalThis as unknown as { process?: { stderr?: { write?: (s: string) => void } } }).process;
+          const p = (
+            globalThis as unknown as {
+              process?: { stderr?: { write?: (s: string) => void } };
+            }
+          ).process;
           p?.stderr?.write?.(data);
         }
       };

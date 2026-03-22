@@ -11,5 +11,5 @@ export function createTlsPolyfill(): Record<string, unknown> {
     TLSSocket: class {},
     Server: class {},
     rootCertificates: [],
-  }
+  };
 }

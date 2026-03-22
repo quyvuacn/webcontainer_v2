@@ -7,9 +7,15 @@ const nat = {
   clearInterval: globalThis.clearInterval.bind(globalThis),
 };
 
-const releases = new Map<ReturnType<typeof globalThis.setTimeout>, () => void>();
+const releases = new Map<
+  ReturnType<typeof globalThis.setTimeout>,
+  () => void
+>();
 
-function releaseId(id: ReturnType<typeof globalThis.setTimeout>, clear: (i: unknown) => void) {
+function releaseId(
+  id: ReturnType<typeof globalThis.setTimeout>,
+  clear: (i: unknown) => void,
+) {
   const r = releases.get(id);
   if (r) {
     releases.delete(id);
@@ -31,13 +37,15 @@ export function setTimeout(
       (cb as (...a: unknown[]) => void)(...args);
     },
     ms,
-    ...args
+    ...args,
   ) as ReturnType<typeof globalThis.setTimeout>;
   releases.set(id, release);
   return id;
 }
 
-export function clearTimeout(id: ReturnType<typeof globalThis.setTimeout> | undefined): void {
+export function clearTimeout(
+  id: ReturnType<typeof globalThis.setTimeout> | undefined,
+): void {
   if (id != null) releaseId(id, nat.clearTimeout);
   nat.clearTimeout(id);
 }
@@ -51,22 +59,29 @@ export function setInterval(
   const id = nat.setInterval(
     () => (cb as (...a: unknown[]) => void)(...args),
     ms,
-    ...args
+    ...args,
   ) as ReturnType<typeof globalThis.setInterval>;
   releases.set(id, release);
   return id;
 }
 
-export function clearInterval(id: ReturnType<typeof globalThis.setInterval> | undefined): void {
+export function clearInterval(
+  id: ReturnType<typeof globalThis.setInterval> | undefined,
+): void {
   if (id != null) releaseId(id, nat.clearInterval);
   nat.clearInterval(id);
 }
 
-export function setImmediate(cb: (...args: unknown[]) => void, ...args: unknown[]): ReturnType<typeof globalThis.setTimeout> {
+export function setImmediate(
+  cb: (...args: unknown[]) => void,
+  ...args: unknown[]
+): ReturnType<typeof globalThis.setTimeout> {
   return setTimeout(cb, 0, ...args);
 }
 
-export function clearImmediate(id: ReturnType<typeof globalThis.setTimeout> | undefined): void {
+export function clearImmediate(
+  id: ReturnType<typeof globalThis.setTimeout> | undefined,
+): void {
   clearTimeout(id);
 }
 

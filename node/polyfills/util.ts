@@ -2,8 +2,8 @@
  * Node util module polyfill — uses the 'util' npm package (browserify).
  */
 
-import util from 'util'
+import util from "util";
 
 export function createUtilPolyfill() {
-  return util
+  return util;
 }

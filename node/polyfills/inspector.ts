@@ -8,5 +8,5 @@ export function createInspectorPolyfill(): Record<string, unknown> {
     close: () => {},
     url: () => undefined,
     waitForDebugger: () => {},
-  }
+  };
 }

@@ -7,18 +7,19 @@
 ## Góc nhìn: Code cũ chỉ là demo tính khả thi
 
 Code cũ (`webcontainer`) chủ yếu chứng minh ý tưởng hoạt động được:
+
 - Có VFS, shell, npm install, node chạy script — nhưng phần lớn là stub hoặc kiến trúc khác hoàn toàn so với thiết kế mới.
 
 **Kết luận thực tế:** Chỉ có **Shell** là layer có thể tái sử dụng thực sự. Các phần khác — VFS, npm, Node runtime, persistence, HTTP — đều viết mới theo thiết kế WASM/Rust/OPFS/CDN.
 
-| Phần | Tái sử dụng? | Lý do |
-|------|--------------|-------|
-| **Shell** (parser, commands, plugin) | Có | Là lớp UI: nhận input, parse, dispatch. Chỉ cần adapter gọi API mới (WASM) thay vì VFS/npm cũ |
-| VFS | Không | Cấu trúc khác (Inode → HashMap), backend khác (IDB → OPFS), viết trong Rust |
-| npm | Không | Paradigm khác (extract → virtual stubs + CDN) |
-| Node runtime | Không | Polyfills → C++ compile WASM |
-| child_process, HTTP | Không | Cũ là stub, mới triển khai thật |
-| Server | Bỏ | Thiết kế mới dùng CDN, không cần server |
+| Phần                                 | Tái sử dụng? | Lý do                                                                                         |
+| ------------------------------------ | ------------ | --------------------------------------------------------------------------------------------- |
+| **Shell** (parser, commands, plugin) | Có           | Là lớp UI: nhận input, parse, dispatch. Chỉ cần adapter gọi API mới (WASM) thay vì VFS/npm cũ |
+| VFS                                  | Không        | Cấu trúc khác (Inode → HashMap), backend khác (IDB → OPFS), viết trong Rust                   |
+| npm                                  | Không        | Paradigm khác (extract → virtual stubs + CDN)                                                 |
+| Node runtime                         | Không        | Polyfills → C++ compile WASM                                                                  |
+| child_process, HTTP                  | Không        | Cũ là stub, mới triển khai thật                                                               |
+| Server                               | Bỏ           | Thiết kế mới dùng CDN, không cần server                                                       |
 
 Các mục "có thể tham khảo" (semver logic, exports resolution, path utils) — đó là **port/rewrite**, không phải reuse code. Có thể đọc để hiểu edge cases rồi viết lại trong Rust.
 
@@ -26,17 +27,17 @@ Các mục "có thể tham khảo" (semver logic, exports resolution, path utils
 
 ## Tổng quan kiến trúc
 
-| Thành phần | Code cũ | Thiết kế mới |
-|------------|---------|--------------|
-| VFS | VirtualFS + Inode tree, Memory/IDB backend | RamVfs (HashMap), OPFS write-through |
-| Persistence | IndexedDB | OPFS |
-| HTTP Server | Stub (không thật sự listen) | Virtual TCP (subdomain-per-port, SAB) |
-| child_process | Stub (throw not supported) | Web Worker + spawnSync + Cross-worker VFS |
-| Node runtime | JS polyfills + CJS loader + iframe | Node.js C++ bindings → WASM |
-| npm | Tarball download + extract to VFS | Virtual node_modules stubs + CDN lazy fetch |
-| node_modules | Full VFS hoặc server-backed (HTTP) | Virtual stubs, fetch từ unpkg khi import |
-| Module resolution | ModuleResolver (TS) | CDN resolver (Rust) |
-| Service Worker | Không có | sw.js: F5 restore, VFS serve, port routing |
+| Thành phần        | Code cũ                                    | Thiết kế mới                                |
+| ----------------- | ------------------------------------------ | ------------------------------------------- |
+| VFS               | VirtualFS + Inode tree, Memory/IDB backend | RamVfs (HashMap), OPFS write-through        |
+| Persistence       | IndexedDB                                  | OPFS                                        |
+| HTTP Server       | Stub (không thật sự listen)                | Virtual TCP (subdomain-per-port, SAB)       |
+| child_process     | Stub (throw not supported)                 | Web Worker + spawnSync + Cross-worker VFS   |
+| Node runtime      | JS polyfills + CJS loader + iframe         | Node.js C++ bindings → WASM                 |
+| npm               | Tarball download + extract to VFS          | Virtual node_modules stubs + CDN lazy fetch |
+| node_modules      | Full VFS hoặc server-backed (HTTP)         | Virtual stubs, fetch từ unpkg khi import    |
+| Module resolution | ModuleResolver (TS)                        | CDN resolver (Rust)                         |
+| Service Worker    | Không có                                   | sw.js: F5 restore, VFS serve, port routing  |
 
 ---
 
@@ -46,13 +47,13 @@ Các mục "có thể tham khảo" (semver logic, exports resolution, path utils
 
 **Lý do:** Khác biệt cơ bản về cấu trúc dữ liệu và luồng xử lý.
 
-| Tiêu chí | Code cũ | Thiết kế mới |
-|----------|---------|--------------|
-| Cấu trúc | Inode tree (Map\<ino, Inode\>), traverse path | HashMap path → FileEntry, flat |
-| Backend | StorageBackend abstraction (Memory, IDB) | RAM primary, OPFS chỉ write-through async |
-| API | Async (readFile, writeFile...) | Sync trong WASM, Rust |
-| Watch | WatchSystem.emit() gọi sau write | emit_change() ngay trong write path (0ms) |
-| Sync API | readFileSync chỉ với MemoryBackend | VFS nằm trong WASM, sync native |
+| Tiêu chí | Code cũ                                       | Thiết kế mới                              |
+| -------- | --------------------------------------------- | ----------------------------------------- |
+| Cấu trúc | Inode tree (Map\<ino, Inode\>), traverse path | HashMap path → FileEntry, flat            |
+| Backend  | StorageBackend abstraction (Memory, IDB)      | RAM primary, OPFS chỉ write-through async |
+| API      | Async (readFile, writeFile...)                | Sync trong WASM, Rust                     |
+| Watch    | WatchSystem.emit() gọi sau write              | emit_change() ngay trong write path (0ms) |
+| Sync API | readFileSync chỉ với MemoryBackend            | VFS nằm trong WASM, sync native           |
 
 **Đề xuất:** Viết mới hoàn toàn theo `vfs_ram.rs`. Logic `PathUtils`, `WatchSystem.matches` có thể tham khảo nhưng cấu trúc khác.
 
@@ -73,10 +74,12 @@ Các mục "có thể tham khảo" (semver logic, exports resolution, path utils
 ### 1.3 Virtual TCP (HTTP Server thật)
 
 **Lý do:** Code cũ `http.ts` polyfill chỉ là stub:
+
 - `listen()` gọi `queueMicrotask` emit `listening` — không có server thật
 - Không có subdomain-per-port, không có SAB pipe, không có SW intercept
 
 **Đề xuất:** Viết mới toàn bộ:
+
 - Rust: `virtual_tcp.rs` (run_port_loop, SAB protocol)
 - JS: SW fetch handler cho `port-*.preview.domain`
 - Layout SAB: status, req_len, resp_len, body
@@ -86,12 +89,14 @@ Các mục "có thể tham khảo" (semver logic, exports resolution, path utils
 ### 1.4 child_process
 
 **Lý do:** Code cũ `child_process.ts` là stub throw "not supported". Thiết kế mới cần:
+
 - Web Worker per process
 - spawnSync với Atomics.wait
 - stdin/stdout/stderr qua SAB
 - Cross-worker VFS (child đọc/ghi VFS của main qua SAB channel)
 
 **Đề xuất:** Viết mới. Có thể tham khảo:
+
 - `runtime/process-manager.ts` — spawn Worker, track PID (logic tương tự nhưng protocol khác)
 - `vfs/sync/sync-bridge.ts` — SAB encode/decode pattern
 
@@ -112,16 +117,17 @@ Các mục "có thể tham khảo" (semver logic, exports resolution, path utils
 ### 1.6 npm Engine (core logic)
 
 **Lý do:** Paradigm khác:
+
 - Cũ: Tải tarball → extract toàn bộ vào VFS (hoặc server extract, browser fetch)
 - Mới: Resolve → tạo virtual stubs (package.json + placeholder index.js) → fetch file thật từ CDN khi import (lazy)
 
-| Thành phần | Code cũ | Thiết kế mới |
-|------------|---------|--------------|
-| Resolution | `resolver/index.ts`, `semver.ts` | Rust resolver, semver.rs |
-| Storage | Tarball extract to VFS | Stub only, không extract |
-| Fetch | TarballDownloader | CDN (unpkg) khi cần |
-| Lockfile | LockfileReader/Writer | Lockfile trong Rust |
-| npm ci | Không có | Có (strict, fail nếu lockfile lệch) |
+| Thành phần | Code cũ                          | Thiết kế mới                        |
+| ---------- | -------------------------------- | ----------------------------------- |
+| Resolution | `resolver/index.ts`, `semver.ts` | Rust resolver, semver.rs            |
+| Storage    | Tarball extract to VFS           | Stub only, không extract            |
+| Fetch      | TarballDownloader                | CDN (unpkg) khi cần                 |
+| Lockfile   | LockfileReader/Writer            | Lockfile trong Rust                 |
+| npm ci     | Không có                         | Có (strict, fail nếu lockfile lệch) |
 
 **Đề xuất:** Viết mới npm engine trong Rust. Logic semver (`^`, `~`, exact) có thể port từ `npm/registry/semver.ts` sang Rust.
 
@@ -132,6 +138,7 @@ Các mục "có thể tham khảo" (semver logic, exports resolution, path utils
 **Lý do:** Code cũ không có SW.
 
 Thiết kế mới cần sw.js để:
+
 - F5 restore: OPFS → RAM preload
 - Serve VFS files (`/__r__/path`)
 - Intercept Virtual TCP (`port-*.preview`)
@@ -148,6 +155,7 @@ Thiết kế mới cần sw.js để:
 Shell là lớp UI: user gõ lệnh → parse → dispatch → hiển thị output. Kiến trúc này không phụ thuộc backend.
 
 **Reuse được:**
+
 - `parseCommand` / `parseCommandChain` — cú pháp shell (pipe, redirect, chain)
 - CommandRegistry, plugin pattern
 - Builtin names (ls, cd, pwd, cat, mkdir, rm...)
@@ -173,7 +181,8 @@ Shell là lớp UI: user gõ lệnh → parse → dispatch → hiển thị outp
 
 ### 4.1 Server-backed node_modules (HybridFileSource)
 
-**Code cũ:** 
+**Code cũ:**
+
 - `server/` — Express API: POST /api/install, GET /api/packages
 - `node/file-source/hybrid.ts` — đọc project từ VFS, node_modules từ server HTTP
 - `docs/server-backed_node_modules_v2.plan.md`
@@ -293,17 +302,17 @@ Shell là lớp UI: user gõ lệnh → parse → dispatch → hiển thị outp
 
 ## 5. Bảng tổng kết
 
-| Layer | Rework | Reuse? | Ghi chú |
-|-------|--------|--------|---------|
-| RAM VFS | Hoàn toàn | Không | Viết mới Rust |
-| OPFS | Hoàn toàn (mới) | Không | Chưa có trong code cũ |
-| Virtual TCP | Hoàn toàn (mới) | Không | HTTP cũ là stub |
-| child_process | Hoàn toàn | Không | Cũ throw "not supported" |
-| Node C++ WASM | Hoàn toàn | Không | Thay toàn bộ polyfills |
-| npm Engine | Hoàn toàn | Không | Paradigm khác |
-| CDN Resolver | Phần lớn mới | Không | Port logic exports |
-| Service Worker | Hoàn toàn (mới) | Không | Chưa có |
-| **Shell** | Adapter handlers | **Có** | Parser, commands, plugin — gọi API mới |
+| Layer          | Rework           | Reuse? | Ghi chú                                |
+| -------------- | ---------------- | ------ | -------------------------------------- |
+| RAM VFS        | Hoàn toàn        | Không  | Viết mới Rust                          |
+| OPFS           | Hoàn toàn (mới)  | Không  | Chưa có trong code cũ                  |
+| Virtual TCP    | Hoàn toàn (mới)  | Không  | HTTP cũ là stub                        |
+| child_process  | Hoàn toàn        | Không  | Cũ throw "not supported"               |
+| Node C++ WASM  | Hoàn toàn        | Không  | Thay toàn bộ polyfills                 |
+| npm Engine     | Hoàn toàn        | Không  | Paradigm khác                          |
+| CDN Resolver   | Phần lớn mới     | Không  | Port logic exports                     |
+| Service Worker | Hoàn toàn (mới)  | Không  | Chưa có                                |
+| **Shell**      | Adapter handlers | **Có** | Parser, commands, plugin — gọi API mới |
 
 ---
 
@@ -317,4 +326,4 @@ Shell là lớp UI: user gõ lệnh → parse → dispatch → hiển thị outp
 
 ---
 
-*Tài liệu tạo từ so sánh `webcontainer` (src, server, docs) với `master-design.md`*
+_Tài liệu tạo từ so sánh `webcontainer` (src, server, docs) với `master-design.md`_

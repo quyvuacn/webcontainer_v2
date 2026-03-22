@@ -152,33 +152,38 @@ Phase C — Hệ thống đầy đủ:
 async function bootstrap() {
   // Phase A
   if (!crossOriginIsolated) {
-    await navigator.serviceWorker.register('/sw.js')
-    location.reload()
-    return
+    await navigator.serviceWorker.register("/sw.js");
+    location.reload();
+    return;
   }
 
   // Phase B
-  await acquireTabLock()  // throw nếu tab khác đang mở
-  const wasm = await WebAssembly.compileStreaming(fetch('/runtime/node_bindings.wasm'))
-  await initWasm(wasm)
+  await acquireTabLock(); // throw nếu tab khác đang mở
+  const wasm = await WebAssembly.compileStreaming(
+    fetch("/runtime/node_bindings.wasm"),
+  );
+  await initWasm(wasm);
   for (const { path, content } of await opfsListAll()) {
-    wasmVfsPreload(path, content)  // không emit events, không write-through
+    wasmVfsPreload(path, content); // không emit events, không write-through
   }
 
   // Phase C
-  const sw = await navigator.serviceWorker.ready
-  sw.active.postMessage({ type: 'VFS_READY' })
-  spawnHandlerWorker()
+  const sw = await navigator.serviceWorker.ready;
+  sw.active.postMessage({ type: "VFS_READY" });
+  spawnHandlerWorker();
 }
 
 function acquireTabLock() {
   return new Promise((resolve, reject) => {
-    navigator.locks.request('project_tab', { ifAvailable: true }, lock => {
-      if (!lock) { reject(new Error('Project already open in another tab')); return }
-      resolve()
-      return new Promise(() => {})  // giữ lock cho đến khi tab đóng
-    })
-  })
+    navigator.locks.request("project_tab", { ifAvailable: true }, (lock) => {
+      if (!lock) {
+        reject(new Error("Project already open in another tab"));
+        return;
+      }
+      resolve();
+      return new Promise(() => {}); // giữ lock cho đến khi tab đóng
+    });
+  });
 }
 ```
 
@@ -317,34 +322,34 @@ Main thread lắng nghe VFS requests từ tất cả Workers qua MessageChannel.
 ```javascript
 // main.js
 
-const vfsPorts = []  // MessageChannel ports từ các Workers
+const vfsPorts = []; // MessageChannel ports từ các Workers
 
 function registerWorkerVfsPort(port) {
-  vfsPorts.push(port)
+  vfsPorts.push(port);
   port.onmessage = async ({ data }) => {
     switch (data.op) {
-      case 'read': {
-        const bytes = wasmVfsRead(data.path)
-        port.postMessage({ id: data.id, bytes: bytes ?? null })
-        break
+      case "read": {
+        const bytes = wasmVfsRead(data.path);
+        port.postMessage({ id: data.id, bytes: bytes ?? null });
+        break;
       }
-      case 'write': {
-        wasmVfsWrite(data.path, data.bytes)
-        port.postMessage({ id: data.id })
-        break
+      case "write": {
+        wasmVfsWrite(data.path, data.bytes);
+        port.postMessage({ id: data.id });
+        break;
       }
-      case 'acquire_lock': {
-        const lockId = wasmVfsAcquireLock(data.prefix)
-        port.postMessage({ id: data.id, lockId })
-        break
+      case "acquire_lock": {
+        const lockId = wasmVfsAcquireLock(data.prefix);
+        port.postMessage({ id: data.id, lockId });
+        break;
       }
-      case 'release_lock': {
-        wasmVfsReleaseLock(data.lockId)
-        port.postMessage({ id: data.id })
-        break
+      case "release_lock": {
+        wasmVfsReleaseLock(data.lockId);
+        port.postMessage({ id: data.id });
+        break;
       }
     }
-  }
+  };
 }
 ```
 
@@ -377,92 +382,97 @@ OPFS chỉ làm 2 việc: nhận write-through từ RamVfs, và cung cấp data 
 ```javascript
 // js/opfs_worker.js — dedicated Worker, KHÔNG phải main thread
 
-const root = await navigator.storage.getDirectory()
-const bc   = new BroadcastChannel('opfs_sync')
+const root = await navigator.storage.getDirectory();
+const bc = new BroadcastChannel("opfs_sync");
 
 async function getHandle(path, create = false) {
-  const parts = path.split('/').filter(Boolean)
-  let dir = root
+  const parts = path.split("/").filter(Boolean);
+  let dir = root;
   for (const seg of parts.slice(0, -1)) {
-    dir = await dir.getDirectoryHandle(seg, { create })
+    dir = await dir.getDirectoryHandle(seg, { create });
   }
-  return dir.getFileHandle(parts.at(-1), { create })
+  return dir.getFileHandle(parts.at(-1), { create });
 }
 
 self.onmessage = async ({ data }) => {
-  const { op, id, path, bytes } = data
+  const { op, id, path, bytes } = data;
 
-  if (op === 'write') {
-    const handle = await getHandle(path, true)
+  if (op === "write") {
+    const handle = await getHandle(path, true);
     // createSyncAccessHandle = exclusive lock — OK trong Worker
     // Throw nếu tab khác đang giữ lock trên cùng file
-    const sync = await handle.createSyncAccessHandle()
+    const sync = await handle.createSyncAccessHandle();
     try {
-      sync.truncate(0)
-      sync.write(bytes)
-      sync.flush()
+      sync.truncate(0);
+      sync.write(bytes);
+      sync.flush();
     } finally {
-      sync.close()
+      sync.close();
     }
     // Notify các tab khác → invalidate RAM cache
-    bc.postMessage({ type: 'file_changed', path })
-    self.postMessage({ id })
-
-  } else if (op === 'read') {
-    const handle  = await getHandle(path)
-    const file    = await handle.getFile()
-    const content = new Uint8Array(await file.arrayBuffer())
-    self.postMessage({ id, content })
-
-  } else if (op === 'list_all') {
-    const results = []
+    bc.postMessage({ type: "file_changed", path });
+    self.postMessage({ id });
+  } else if (op === "read") {
+    const handle = await getHandle(path);
+    const file = await handle.getFile();
+    const content = new Uint8Array(await file.arrayBuffer());
+    self.postMessage({ id, content });
+  } else if (op === "list_all") {
+    const results = [];
     async function walk(dir, prefix) {
       for await (const [name, handle] of dir.entries()) {
-        const p = prefix ? `${prefix}/${name}` : name
-        if (handle.kind === 'file') {
-          results.push({ path: p, content: new Uint8Array(await (await handle.getFile()).arrayBuffer()) })
-        } else { await walk(handle, p) }
+        const p = prefix ? `${prefix}/${name}` : name;
+        if (handle.kind === "file") {
+          results.push({
+            path: p,
+            content: new Uint8Array(
+              await (await handle.getFile()).arrayBuffer(),
+            ),
+          });
+        } else {
+          await walk(handle, p);
+        }
       }
     }
-    await walk(root, '')
-    self.postMessage({ id, results })
+    await walk(root, "");
+    self.postMessage({ id, results });
   }
-}
+};
 ```
 
 ```javascript
 // js/opfs_bridge.js — chạy trên main thread, expose API cho WASM
 
-const opfsWorker = new Worker('/js/opfs_worker.js')
-const pending    = new Map()
+const opfsWorker = new Worker("/js/opfs_worker.js");
+const pending = new Map();
 
 opfsWorker.onmessage = ({ data }) => {
-  pending.get(data.id)?.(data)
-  pending.delete(data.id)
-}
+  pending.get(data.id)?.(data);
+  pending.delete(data.id);
+};
 
 // Các hàm này được Emscripten bind — Main gọi như JS function thường
 export function opfsWrite(path, bytes) {
-  return new Promise(resolve => {
-    const id = crypto.randomUUID()
-    pending.set(id, resolve)
-    opfsWorker.postMessage({ op: 'write', id, path, bytes })
-  })
+  return new Promise((resolve) => {
+    const id = crypto.randomUUID();
+    pending.set(id, resolve);
+    opfsWorker.postMessage({ op: "write", id, path, bytes });
+  });
 }
 
 export function opfsListAll() {
-  return new Promise(resolve => {
-    const id = crypto.randomUUID()
-    pending.set(id, ({ results }) => resolve(results))
-    opfsWorker.postMessage({ op: 'list_all', id })
-  })
+  return new Promise((resolve) => {
+    const id = crypto.randomUUID();
+    pending.set(id, ({ results }) => resolve(results));
+    opfsWorker.postMessage({ op: "list_all", id });
+  });
 }
 
 // Nhận notification từ tab khác → invalidate RAM cache
-const bc = new BroadcastChannel('opfs_sync')
+const bc = new BroadcastChannel("opfs_sync");
 bc.onmessage = ({ data }) => {
-  if (data.type === 'file_changed') wasmVfsInvalidate(data.path)
-}
+  if (data.type === "file_changed") wasmVfsInvalidate(data.path);
+};
 ```
 
 Trong RamVfs (Rust), `spawn_local(opfs_write(...))` gọi JS `opfsWrite()` thông qua Emscripten bind — không gọi thẳng vào OPFS, không block Main.
@@ -476,164 +486,193 @@ SW là thin proxy layer. Không giữ state, không giữ VFS. Hai việc chính
 ```javascript
 // sw.js
 
-const mainClients  = new Map()   // clientId → client
-const portBuffers  = new Map()   // port → SharedArrayBuffer (TCP)
+const mainClients = new Map(); // clientId → client
+const portBuffers = new Map(); // port → SharedArrayBuffer (TCP)
 
 // ── Lifecycle ──────────────────────────────────────────────────────
 
-self.addEventListener('install', event => {
+self.addEventListener("install", (event) => {
   // Pre-cache static assets — không bao giờ serve qua VFS proxy
   event.waitUntil(
-    caches.open('static-v1').then(c => c.addAll([
-      '/runtime/node_bindings.wasm',
-      '/runtime/node_bindings.js',
-      '/runtime/node_stdlib/fs.js',
-      '/runtime/node_stdlib/path.js',
-      // ... tất cả stdlib
-    ]))
-  )
-  self.skipWaiting()
-})
+    caches.open("static-v1").then((c) =>
+      c.addAll([
+        "/runtime/node_bindings.wasm",
+        "/runtime/node_bindings.js",
+        "/runtime/node_stdlib/fs.js",
+        "/runtime/node_stdlib/path.js",
+        // ... tất cả stdlib
+      ]),
+    ),
+  );
+  self.skipWaiting();
+});
 
-self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.claim())
-})
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
 
 // ── Messages ────────────────────────────────────────────────────────
 
-self.addEventListener('message', ({ data, source }) => {
-  if (data.type === 'SKIP_WAITING')  { self.skipWaiting(); return }
-  if (data.type === 'VFS_READY')     { mainClients.set(source.id, source) }
-  if (data.type === 'register_port') { portBuffers.set(data.port, data.buffer) }
-  if (data.type === 'vfs_response')  {
-    pendingVfs.get(data.requestId)?.(data.bytes)
-    pendingVfs.delete(data.requestId)
+self.addEventListener("message", ({ data, source }) => {
+  if (data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+    return;
   }
-})
+  if (data.type === "VFS_READY") {
+    mainClients.set(source.id, source);
+  }
+  if (data.type === "register_port") {
+    portBuffers.set(data.port, data.buffer);
+  }
+  if (data.type === "vfs_response") {
+    pendingVfs.get(data.requestId)?.(data.bytes);
+    pendingVfs.delete(data.requestId);
+  }
+});
 
 // ── Fetch routing ──────────────────────────────────────────────────
 
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url)
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
 
   // 1. Static assets → Cache API, không cần Main
-  if (url.pathname.startsWith('/runtime/') || url.pathname === '/sw.js') {
+  if (url.pathname.startsWith("/runtime/") || url.pathname === "/sw.js") {
     event.respondWith(
-      caches.match(event.request)
-        .then(r => r ?? fetch(event.request))
-    )
-    return
+      caches.match(event.request).then((r) => r ?? fetch(event.request)),
+    );
+    return;
   }
 
   // 2. COOP/COEP cho document
-  if (event.request.destination === 'document') {
-    event.respondWith(injectIsolationHeaders(event.request))
-    return
+  if (event.request.destination === "document") {
+    event.respondWith(injectIsolationHeaders(event.request));
+    return;
   }
 
   // 3. Dynamic VFS files → forward tới Main
-  if (url.pathname.startsWith('/__r__/')) {
-    event.respondWith(serveVfsFile(url.pathname.slice(7), event.clientId))
-    return
+  if (url.pathname.startsWith("/__r__/")) {
+    event.respondWith(serveVfsFile(url.pathname.slice(7), event.clientId));
+    return;
   }
 
   // 4. Virtual TCP ports → SAB pipe
-  const portMatch = url.hostname.match(/^port-(\d+)\.preview\./)
+  const portMatch = url.hostname.match(/^port-(\d+)\.preview\./);
   if (portMatch) {
-    const buf = portBuffers.get(parseInt(portMatch[1]))
-    if (buf) { event.respondWith(handleVirtualTcp(event.request, buf)); return }
+    const buf = portBuffers.get(parseInt(portMatch[1]));
+    if (buf) {
+      event.respondWith(handleVirtualTcp(event.request, buf));
+      return;
+    }
   }
-})
+});
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-const pendingVfs = new Map()
+const pendingVfs = new Map();
 
 async function serveVfsFile(path, clientId) {
-  const client = mainClients.get(clientId)
-    ?? (await self.clients.matchAll())[0]
-  if (!client) return new Response('No client', { status: 503 })
+  const client =
+    mainClients.get(clientId) ?? (await self.clients.matchAll())[0];
+  if (!client) return new Response("No client", { status: 503 });
 
-  return new Promise(resolve => {
-    const requestId = crypto.randomUUID()
-    pendingVfs.set(requestId, bytes => {
-      if (!bytes) { resolve(new Response('Not found', { status: 404 })); return }
-      const isJs = /\.(m?js|cjs|ts|tsx|jsx)$/.test(path) || path.startsWith('builtin/')
-      resolve(new Response(bytes, {
-        headers: { 'Content-Type': isJs ? 'application/javascript' : 'application/octet-stream' }
-      }))
-    })
-    client.postMessage({ type: 'vfs_request', requestId, path })
-  })
+  return new Promise((resolve) => {
+    const requestId = crypto.randomUUID();
+    pendingVfs.set(requestId, (bytes) => {
+      if (!bytes) {
+        resolve(new Response("Not found", { status: 404 }));
+        return;
+      }
+      const isJs =
+        /\.(m?js|cjs|ts|tsx|jsx)$/.test(path) || path.startsWith("builtin/");
+      resolve(
+        new Response(bytes, {
+          headers: {
+            "Content-Type": isJs
+              ? "application/javascript"
+              : "application/octet-stream",
+          },
+        }),
+      );
+    });
+    client.postMessage({ type: "vfs_request", requestId, path });
+  });
 }
 
 async function handleVirtualTcp(request, buf) {
-  if (request.headers.get('upgrade') === 'websocket') {
-    const { 0: client, 1: server } = new WebSocketPair()
-    bridgeWebSocket(server, buf)
-    return new Response(null, { status: 101, webSocket: client })
+  if (request.headers.get("upgrade") === "websocket") {
+    const { 0: client, 1: server } = new WebSocketPair();
+    bridgeWebSocket(server, buf);
+    return new Response(null, { status: 101, webSocket: client });
   }
 
-  const ctrl     = new Int32Array(buf)
-  const data     = new Uint8Array(buf)
-  const reqBytes = await serializeRequest(request)
+  const ctrl = new Int32Array(buf);
+  const data = new Uint8Array(buf);
+  const reqBytes = await serializeRequest(request);
 
-  data.set(reqBytes, 12)
-  Atomics.store(ctrl, 1, reqBytes.length)
-  Atomics.store(ctrl, 0, 1)  // STATUS_REQUEST
-  Atomics.notify(ctrl, 0)
+  data.set(reqBytes, 12);
+  Atomics.store(ctrl, 1, reqBytes.length);
+  Atomics.store(ctrl, 0, 1); // STATUS_REQUEST
+  Atomics.notify(ctrl, 0);
 
   // Atomics.wait OK trong SW (dedicated thread)
-  Atomics.wait(ctrl, 0, 1)
+  Atomics.wait(ctrl, 0, 1);
 
-  const respLen   = Atomics.load(ctrl, 2)
-  const respBytes = data.slice(12 + reqBytes.length, 12 + reqBytes.length + respLen)
-  Atomics.store(ctrl, 0, 0)  // reset idle
-  return deserializeResponse(respBytes)
+  const respLen = Atomics.load(ctrl, 2);
+  const respBytes = data.slice(
+    12 + reqBytes.length,
+    12 + reqBytes.length + respLen,
+  );
+  Atomics.store(ctrl, 0, 0); // reset idle
+  return deserializeResponse(respBytes);
 }
 
 function bridgeWebSocket(ws, buf) {
-  const ctrl = new Int32Array(buf)
-  const data = new Uint8Array(buf)
-  ws.accept()
+  const ctrl = new Int32Array(buf);
+  const data = new Uint8Array(buf);
+  ws.accept();
 
-  ws.addEventListener('message', ({ data: msg }) => {
-    const bytes  = typeof msg === 'string' ? new TextEncoder().encode(msg) : new Uint8Array(msg)
-    const isText = typeof msg === 'string'
-    data.set(bytes, 12)
-    Atomics.store(ctrl, 1, bytes.length)
-    Atomics.store(ctrl, 2, isText ? 0 : 1)  // msg_type
-    Atomics.store(ctrl, 0, 1)               // FROM_CLIENT
-    Atomics.notify(ctrl, 0)
-  })
+  ws.addEventListener("message", ({ data: msg }) => {
+    const bytes =
+      typeof msg === "string"
+        ? new TextEncoder().encode(msg)
+        : new Uint8Array(msg);
+    const isText = typeof msg === "string";
+    data.set(bytes, 12);
+    Atomics.store(ctrl, 1, bytes.length);
+    Atomics.store(ctrl, 2, isText ? 0 : 1); // msg_type
+    Atomics.store(ctrl, 0, 1); // FROM_CLIENT
+    Atomics.notify(ctrl, 0);
+  });
 
-  ws.addEventListener('close', () => {
-    Atomics.store(ctrl, 2, 2)  // CLOSE
-    Atomics.store(ctrl, 0, 1)
-    Atomics.notify(ctrl, 0)
-  })
-
-  ;(async () => {
+  ws.addEventListener("close", () => {
+    Atomics.store(ctrl, 2, 2); // CLOSE
+    Atomics.store(ctrl, 0, 1);
+    Atomics.notify(ctrl, 0);
+  });
+  (async () => {
     while (true) {
-      await Atomics.waitAsync(ctrl, 0, 0).value
-      if (Atomics.load(ctrl, 0) !== 2) continue  // FROM_SERVER
-      const len     = Atomics.load(ctrl, 1)
-      const msgType = Atomics.load(ctrl, 2)
-      const bytes   = data.slice(12, 12 + len)
-      if (msgType === 2) { ws.close(); break }
-      ws.send(msgType === 0 ? new TextDecoder().decode(bytes) : bytes.buffer)
-      Atomics.store(ctrl, 0, 0)
-      Atomics.notify(ctrl, 0)
+      await Atomics.waitAsync(ctrl, 0, 0).value;
+      if (Atomics.load(ctrl, 0) !== 2) continue; // FROM_SERVER
+      const len = Atomics.load(ctrl, 1);
+      const msgType = Atomics.load(ctrl, 2);
+      const bytes = data.slice(12, 12 + len);
+      if (msgType === 2) {
+        ws.close();
+        break;
+      }
+      ws.send(msgType === 0 ? new TextDecoder().decode(bytes) : bytes.buffer);
+      Atomics.store(ctrl, 0, 0);
+      Atomics.notify(ctrl, 0);
     }
-  })()
+  })();
 }
 
 async function injectIsolationHeaders(request) {
-  const resp = await fetch(request)
-  const h    = new Headers(resp.headers)
-  h.set('Cross-Origin-Opener-Policy', 'same-origin')
-  h.set('Cross-Origin-Embedder-Policy', 'require-corp')
-  return new Response(resp.body, { status: resp.status, headers: h })
+  const resp = await fetch(request);
+  const h = new Headers(resp.headers);
+  h.set("Cross-Origin-Opener-Policy", "same-origin");
+  h.set("Cross-Origin-Embedder-Policy", "require-corp");
+  return new Response(resp.body, { status: resp.status, headers: h });
 }
 ```
 
@@ -683,54 +722,54 @@ SharedArrayBuffer (per port, 4MB):
 
 ```javascript
 // tcp_worker.js
-const sw_sab    = null  // SAB với SW
-const hand_sab  = null  // SAB với Handler Worker
+const sw_sab = null; // SAB với SW
+const hand_sab = null; // SAB với Handler Worker
 
 self.onmessage = ({ data }) => {
-  sw_sab   = data.sw_sab
-  hand_sab = data.hand_sab
-  runLoop()
-}
+  sw_sab = data.sw_sab;
+  hand_sab = data.hand_sab;
+  runLoop();
+};
 
 function runLoop() {
-  const sw_ctrl   = new Int32Array(sw_sab)
-  const hand_ctrl = new Int32Array(hand_sab)
+  const sw_ctrl = new Int32Array(sw_sab);
+  const hand_ctrl = new Int32Array(hand_sab);
 
   while (true) {
     // Chờ SW gửi request
-    Atomics.wait(sw_ctrl, 0, 0)
-    const status = Atomics.load(sw_ctrl, 0)
-    if (status !== 1) continue
+    Atomics.wait(sw_ctrl, 0, 0);
+    const status = Atomics.load(sw_ctrl, 0);
+    if (status !== 1) continue;
 
     // Copy request SW → Handler
-    const req_len = Atomics.load(sw_ctrl, 1)
-    new Uint8Array(hand_sab).set(new Uint8Array(sw_sab, 12, req_len), 12)
-    Atomics.store(hand_ctrl, 1, req_len)
-    Atomics.store(hand_ctrl, 0, 1)
-    Atomics.notify(hand_ctrl, 0)
+    const req_len = Atomics.load(sw_ctrl, 1);
+    new Uint8Array(hand_sab).set(new Uint8Array(sw_sab, 12, req_len), 12);
+    Atomics.store(hand_ctrl, 1, req_len);
+    Atomics.store(hand_ctrl, 0, 1);
+    Atomics.notify(hand_ctrl, 0);
 
     // Chờ Handler xử lý xong (với timeout)
-    const deadline = Date.now() + 30000
+    const deadline = Date.now() + 30000;
     while (Atomics.load(hand_ctrl, 0) === 1) {
       if (Date.now() > deadline) {
         // Timeout → trả 503
-        writeErrorResponse(sw_sab, 503)
-        Atomics.store(sw_ctrl, 0, 2)
-        Atomics.notify(sw_ctrl, 0)
-        continue
+        writeErrorResponse(sw_sab, 503);
+        Atomics.store(sw_ctrl, 0, 2);
+        Atomics.notify(sw_ctrl, 0);
+        continue;
       }
-      Atomics.wait(hand_ctrl, 0, 1, 100)
+      Atomics.wait(hand_ctrl, 0, 1, 100);
     }
 
     // Copy response Handler → SW
-    const resp_len = Atomics.load(hand_ctrl, 2)
+    const resp_len = Atomics.load(hand_ctrl, 2);
     new Uint8Array(sw_sab).set(
       new Uint8Array(hand_sab, 12 + req_len, resp_len),
-      12 + req_len
-    )
-    Atomics.store(sw_ctrl, 2, resp_len)
-    Atomics.store(sw_ctrl, 0, 2)
-    Atomics.notify(sw_ctrl, 0)
+      12 + req_len,
+    );
+    Atomics.store(sw_ctrl, 2, resp_len);
+    Atomics.store(sw_ctrl, 0, 2);
+    Atomics.notify(sw_ctrl, 0);
   }
 }
 ```
@@ -739,35 +778,35 @@ function runLoop() {
 
 ```javascript
 // handler_worker.js
-let hand_sab = null
-let vfsPort  = null  // MessageChannel tới Main
+let hand_sab = null;
+let vfsPort = null; // MessageChannel tới Main
 
 self.onmessage = ({ data }) => {
-  hand_sab = data.hand_sab
-  vfsPort  = data.vfsPort
-  initNodeRuntime()
-  runHandlerLoop()
-}
+  hand_sab = data.hand_sab;
+  vfsPort = data.vfsPort;
+  initNodeRuntime();
+  runHandlerLoop();
+};
 
 function runHandlerLoop() {
-  const ctrl = new Int32Array(hand_sab)
+  const ctrl = new Int32Array(hand_sab);
 
   while (true) {
-    Atomics.wait(ctrl, 0, 0)
-    if (Atomics.load(ctrl, 0) !== 1) continue
+    Atomics.wait(ctrl, 0, 0);
+    if (Atomics.load(ctrl, 0) !== 1) continue;
 
-    const req_len = Atomics.load(ctrl, 1)
-    const request = deserializeRequest(new Uint8Array(hand_sab, 12, req_len))
+    const req_len = Atomics.load(ctrl, 1);
+    const request = deserializeRequest(new Uint8Array(hand_sab, 12, req_len));
 
     // dispatch tới user handler
     // Asyncify OK — chỉ suspend Worker này, không ảnh hưởng Main
-    const response = dispatchToNodeHandler(request)
-    const resp     = serializeResponse(response)
+    const response = dispatchToNodeHandler(request);
+    const resp = serializeResponse(response);
 
-    new Uint8Array(hand_sab).set(resp, 12 + req_len)
-    Atomics.store(ctrl, 2, resp.length)
-    Atomics.store(ctrl, 0, 2)
-    Atomics.notify(ctrl, 0)
+    new Uint8Array(hand_sab).set(resp, 12 + req_len);
+    Atomics.store(ctrl, 2, resp.length);
+    Atomics.store(ctrl, 0, 2);
+    Atomics.notify(ctrl, 0);
   }
 }
 ```
@@ -777,32 +816,34 @@ function runHandlerLoop() {
 ```javascript
 // main.js
 function setupVirtualPort(port, userHandler) {
-  const sw_sab   = new SharedArrayBuffer(4 * 1024 * 1024)
-  const hand_sab = new SharedArrayBuffer(4 * 1024 * 1024)
-  const { port1, port2 } = new MessageChannel()
+  const sw_sab = new SharedArrayBuffer(4 * 1024 * 1024);
+  const hand_sab = new SharedArrayBuffer(4 * 1024 * 1024);
+  const { port1, port2 } = new MessageChannel();
 
   // TCP Worker: spin loop
-  const tcpWorker = new Worker('tcp_worker.js')
-  tcpWorker.postMessage({ sw_sab, hand_sab })
+  const tcpWorker = new Worker("tcp_worker.js");
+  tcpWorker.postMessage({ sw_sab, hand_sab });
 
   // Handler Worker: Node.js code
-  const handlerWorker = new Worker('handler_worker.js')
-  handlerWorker.postMessage({ hand_sab, vfsPort: port2 }, [port2])
+  const handlerWorker = new Worker("handler_worker.js");
+  handlerWorker.postMessage({ hand_sab, vfsPort: port2 }, [port2]);
 
   // Main: serve VFS requests từ Handler Worker
   port1.onmessage = ({ data }) => {
-    if (data.op === 'read') {
-      port1.postMessage({ id: data.id, bytes: wasmVfsRead(data.path) })
-    } else if (data.op === 'write') {
-      wasmVfsWrite(data.path, data.bytes)
-      port1.postMessage({ id: data.id })
+    if (data.op === "read") {
+      port1.postMessage({ id: data.id, bytes: wasmVfsRead(data.path) });
+    } else if (data.op === "write") {
+      wasmVfsWrite(data.path, data.bytes);
+      port1.postMessage({ id: data.id });
     }
-  }
+  };
 
   // Notify SW register port
   navigator.serviceWorker.controller.postMessage({
-    type: 'register_port', port, buffer: sw_sab
-  })
+    type: "register_port",
+    port,
+    buffer: sw_sab,
+  });
 }
 ```
 
@@ -818,55 +859,59 @@ function setupVirtualPort(port, userHandler) {
 // child_process_browser.js
 
 export function spawn(file, args, options = {}) {
-  const { port1, port2 } = new MessageChannel()
-  const stdin  = new SharedArrayBuffer(64 * 1024)
-  const stdout = new SharedArrayBuffer(1024 * 1024)
-  const stderr = new SharedArrayBuffer(64 * 1024)
+  const { port1, port2 } = new MessageChannel();
+  const stdin = new SharedArrayBuffer(64 * 1024);
+  const stdout = new SharedArrayBuffer(1024 * 1024);
+  const stderr = new SharedArrayBuffer(64 * 1024);
 
-  const worker = new Worker('child_worker.js')
-  worker.postMessage({ file, args, env: options.env,
-    stdin, stdout, stderr, vfsPort: port2 }, [port2])
+  const worker = new Worker("child_worker.js");
+  worker.postMessage(
+    { file, args, env: options.env, stdin, stdout, stderr, vfsPort: port2 },
+    [port2],
+  );
 
   // Main serve VFS requests từ child
   port1.onmessage = ({ data }) => {
-    if (data.op === 'read') {
-      port1.postMessage({ id: data.id, bytes: wasmVfsRead(data.path) })
-    } else if (data.op === 'write') {
-      wasmVfsWrite(data.path, data.bytes)
-      port1.postMessage({ id: data.id })
+    if (data.op === "read") {
+      port1.postMessage({ id: data.id, bytes: wasmVfsRead(data.path) });
+    } else if (data.op === "write") {
+      wasmVfsWrite(data.path, data.bytes);
+      port1.postMessage({ id: data.id });
     }
-  }
+  };
 
-  return new ChildProcessBridge(worker, stdin, stdout, stderr)
+  return new ChildProcessBridge(worker, stdin, stdout, stderr);
 }
 
 export function spawnSync(file, args, options = {}) {
-  const done   = new Int32Array(new SharedArrayBuffer(4))
-  const stdout = new SharedArrayBuffer(1024 * 1024)
-  const stderr = new SharedArrayBuffer(64 * 1024)
-  const { port1, port2 } = new MessageChannel()
+  const done = new Int32Array(new SharedArrayBuffer(4));
+  const stdout = new SharedArrayBuffer(1024 * 1024);
+  const stderr = new SharedArrayBuffer(64 * 1024);
+  const { port1, port2 } = new MessageChannel();
 
-  const worker = new Worker('child_worker.js')
-  worker.postMessage({ file, args, env: options.env,
-    done, stdout, stderr, vfsPort: port2 }, [port2])
+  const worker = new Worker("child_worker.js");
+  worker.postMessage(
+    { file, args, env: options.env, done, stdout, stderr, vfsPort: port2 },
+    [port2],
+  );
 
   port1.onmessage = ({ data }) => {
-    if (data.op === 'read') {
-      port1.postMessage({ id: data.id, bytes: wasmVfsRead(data.path) })
-    } else if (data.op === 'write') {
-      wasmVfsWrite(data.path, data.bytes)
-      port1.postMessage({ id: data.id })
+    if (data.op === "read") {
+      port1.postMessage({ id: data.id, bytes: wasmVfsRead(data.path) });
+    } else if (data.op === "write") {
+      wasmVfsWrite(data.path, data.bytes);
+      port1.postMessage({ id: data.id });
     }
-  }
+  };
 
   // Block cho đến khi child xong
-  Atomics.wait(done, 0, 0)
+  Atomics.wait(done, 0, 0);
 
   return {
     status: done[0],
     stdout: readSab(stdout),
     stderr: readSab(stderr),
-  }
+  };
 }
 ```
 
@@ -877,39 +922,39 @@ Dùng MessageChannel thay vì SAB để VFS request tích hợp với browser ev
 ```javascript
 // child_worker.js
 
-let vfsPort = null
+let vfsPort = null;
 
 self.onmessage = ({ data }) => {
-  vfsPort = data.vfsPort
-  runScript(data.file, data.args)
-}
+  vfsPort = data.vfsPort;
+  runScript(data.file, data.args);
+};
 
 // VFS read từ child — async, không block
 async function vfsRead(path) {
-  return new Promise(resolve => {
-    const id = crypto.randomUUID()
-    vfsPort.postMessage({ op: 'read', path, id })
+  return new Promise((resolve) => {
+    const id = crypto.randomUUID();
+    vfsPort.postMessage({ op: "read", path, id });
     const handler = ({ data }) => {
-      if (data.id !== id) return
-      vfsPort.removeEventListener('message', handler)
-      resolve(data.bytes)
-    }
-    vfsPort.addEventListener('message', handler)
-  })
+      if (data.id !== id) return;
+      vfsPort.removeEventListener("message", handler);
+      resolve(data.bytes);
+    };
+    vfsPort.addEventListener("message", handler);
+  });
 }
 
 // VFS write từ child
 async function vfsWrite(path, bytes) {
-  return new Promise(resolve => {
-    const id = crypto.randomUUID()
-    vfsPort.postMessage({ op: 'write', path, bytes, id })
+  return new Promise((resolve) => {
+    const id = crypto.randomUUID();
+    vfsPort.postMessage({ op: "write", path, bytes, id });
     const handler = ({ data }) => {
-      if (data.id !== id) return
-      vfsPort.removeEventListener('message', handler)
-      resolve()
-    }
-    vfsPort.addEventListener('message', handler)
-  })
+      if (data.id !== id) return;
+      vfsPort.removeEventListener("message", handler);
+      resolve();
+    };
+    vfsPort.addEventListener("message", handler);
+  });
 }
 ```
 
@@ -921,18 +966,18 @@ npm install không extract tarballs vào RAM hay OPFS. Chỉ lưu lockfile và t
 
 ### npm commands
 
-| Command | Behaviour |
-|---|---|
-| `npm install` / `npm i` | Resolve deps → lockfile → stubs |
-| `npm install -f` | Skip cache, re-resolve |
-| `npm install --legacy-peer-deps` | Bỏ qua peer dep conflicts |
-| `npm install -D` | Ghi vào devDependencies |
-| `npm install pkg@version` | Install version cụ thể |
-| `npm ci` | Strict từ lockfile, fail nếu lệch |
-| `npm run <script>` | Chạy script trong package.json |
-| `npm start` | Alias `npm run start` |
-| `npm uninstall` | Xoá khỏi package.json + lockfile |
-| `npm update` | Update lên version mới nhất |
+| Command                          | Behaviour                         |
+| -------------------------------- | --------------------------------- |
+| `npm install` / `npm i`          | Resolve deps → lockfile → stubs   |
+| `npm install -f`                 | Skip cache, re-resolve            |
+| `npm install --legacy-peer-deps` | Bỏ qua peer dep conflicts         |
+| `npm install -D`                 | Ghi vào devDependencies           |
+| `npm install pkg@version`        | Install version cụ thể            |
+| `npm ci`                         | Strict từ lockfile, fail nếu lệch |
+| `npm run <script>`               | Chạy script trong package.json    |
+| `npm start`                      | Alias `npm run start`             |
+| `npm uninstall`                  | Xoá khỏi package.json + lockfile  |
+| `npm update`                     | Update lên version mới nhất       |
 
 ### install vs ci
 
@@ -1224,9 +1269,9 @@ npm registry và một số CDN không allow CORS. SW fetch không bị restrict
 async function fetchForNpm(url) {
   // SW fetch cross-origin không bị CORS block như main thread
   const resp = await fetch(url, {
-    headers: { 'Accept': 'application/vnd.npm.install-v1+json' }
-  })
-  return resp.json()
+    headers: { Accept: "application/vnd.npm.install-v1+json" },
+  });
+  return resp.json();
 }
 ```
 
@@ -1236,20 +1281,20 @@ async function fetchForNpm(url) {
 
 ### Patch map
 
-| File gốc | Patch | Backend |
-|---|---|---|
-| `node_file.cc` | `node_file_browser.cc` | RamVfs qua MessageChannel |
-| `node_file_async.cc` | `node_file_async_browser.cc` | RamVfs qua MessageChannel |
-| `node_crypto.cc` | `node_crypto_browser.cc` | WebCrypto API |
-| `node_process.cc` | `node_process_browser.cc` | Stub (env, argv, exit) |
-| `node_os.cc` | `node_os_browser.cc` | Stub (platform=linux) |
-| `node_worker.cc` | `node_worker_browser.cc` | Web Workers |
-| `spawn_sync.cc` | `spawn_sync_browser.cc` | Web Worker + SAB done signal |
-| `tcp_wrap.cc` | `tcp_wrap_browser.cc` | Virtual TCP setup |
-| `node_timer_wrap.cc` | `node_timer_browser.cc` | browser setTimeout |
-| `node_buffer.cc` | Giữ nguyên | Pure C++ |
-| `node_url.cc` | Giữ nguyên | Pure C++ |
-| `node_http_parser.cc` | Giữ nguyên | Pure C++ |
+| File gốc              | Patch                        | Backend                      |
+| --------------------- | ---------------------------- | ---------------------------- |
+| `node_file.cc`        | `node_file_browser.cc`       | RamVfs qua MessageChannel    |
+| `node_file_async.cc`  | `node_file_async_browser.cc` | RamVfs qua MessageChannel    |
+| `node_crypto.cc`      | `node_crypto_browser.cc`     | WebCrypto API                |
+| `node_process.cc`     | `node_process_browser.cc`    | Stub (env, argv, exit)       |
+| `node_os.cc`          | `node_os_browser.cc`         | Stub (platform=linux)        |
+| `node_worker.cc`      | `node_worker_browser.cc`     | Web Workers                  |
+| `spawn_sync.cc`       | `spawn_sync_browser.cc`      | Web Worker + SAB done signal |
+| `tcp_wrap.cc`         | `tcp_wrap_browser.cc`        | Virtual TCP setup            |
+| `node_timer_wrap.cc`  | `node_timer_browser.cc`      | browser setTimeout           |
+| `node_buffer.cc`      | Giữ nguyên                   | Pure C++                     |
+| `node_url.cc`         | Giữ nguyên                   | Pure C++                     |
+| `node_http_parser.cc` | Giữ nguyên                   | Pure C++                     |
 
 ### Build script
 
@@ -1395,30 +1440,30 @@ browser-node/
 
 ## So sánh với WebContainers
 
-| | WebContainers | Thiết kế này |
-|---|---|---|
-| Approach | Compile full Node.js | Chỉ C++ bindings |
-| Bundle size | ~40 MB | ~10–15 MB |
-| child_process | Có | Có (Web Workers) |
-| fs.watch() / HMR | Có | Có (0ms hook) |
-| http server | Có | Có (subdomain TCP) |
-| npm install / ci | Có | Có |
-| F5 restore | Có | Có (OPFS) |
-| node_modules size | Unlimited | Virtual — không ghi |
-| Code ẩn | Không | Có (WASM) |
-| Phụ thuộc | Stackblitz | Không |
+|                   | WebContainers        | Thiết kế này        |
+| ----------------- | -------------------- | ------------------- |
+| Approach          | Compile full Node.js | Chỉ C++ bindings    |
+| Bundle size       | ~40 MB               | ~10–15 MB           |
+| child_process     | Có                   | Có (Web Workers)    |
+| fs.watch() / HMR  | Có                   | Có (0ms hook)       |
+| http server       | Có                   | Có (subdomain TCP)  |
+| npm install / ci  | Có                   | Có                  |
+| F5 restore        | Có                   | Có (OPFS)           |
+| node_modules size | Unlimited            | Virtual — không ghi |
+| Code ẩn           | Không                | Có (WASM)           |
+| Phụ thuộc         | Stackblitz           | Không               |
 
 ---
 
 ## Giới hạn
 
-| Feature | Lý do |
-|---|---|
-| Native addons (.node) | Không có dynamic linker trong browser |
-| Raw TCP client | Browser block hoàn toàn |
-| Unix domain sockets | Không tồn tại |
-| Python/Ruby/Go | Cần compile runtime riêng |
-| npm postinstall binary | Binary không chạy được |
+| Feature                | Lý do                                 |
+| ---------------------- | ------------------------------------- |
+| Native addons (.node)  | Không có dynamic linker trong browser |
+| Raw TCP client         | Browser block hoàn toàn               |
+| Unix domain sockets    | Không tồn tại                         |
+| Python/Ruby/Go         | Cần compile runtime riêng             |
+| npm postinstall binary | Binary không chạy được                |
 
 ---
 
@@ -1502,64 +1547,62 @@ OPFS Worker
 ```javascript
 // js/opfs_worker.js — chạy trong dedicated Worker
 
-const root = await navigator.storage.getDirectory()
-const bc   = new BroadcastChannel('opfs_sync')
+const root = await navigator.storage.getDirectory();
+const bc = new BroadcastChannel("opfs_sync");
 
 self.onmessage = async ({ data }) => {
-  const { op, id, path, bytes } = data
+  const { op, id, path, bytes } = data;
 
-  if (op === 'write') {
-    const handle = await getHandle(path, true)
-    const sync   = await handle.createSyncAccessHandle()
+  if (op === "write") {
+    const handle = await getHandle(path, true);
+    const sync = await handle.createSyncAccessHandle();
     try {
-      sync.truncate(0)
-      sync.write(bytes)
-      sync.flush()
+      sync.truncate(0);
+      sync.write(bytes);
+      sync.flush();
     } finally {
-      sync.close()
+      sync.close();
     }
-    bc.postMessage({ type: 'file_changed', path })
-    self.postMessage({ id })
-
-  } else if (op === 'read') {
-    const handle  = await getHandle(path)
-    const file    = await handle.getFile()
-    const content = new Uint8Array(await file.arrayBuffer())
-    self.postMessage({ id, content })
-
-  } else if (op === 'list_all') {
-    const results = []
-    await walk(root, '', results)
-    self.postMessage({ id, results })
+    bc.postMessage({ type: "file_changed", path });
+    self.postMessage({ id });
+  } else if (op === "read") {
+    const handle = await getHandle(path);
+    const file = await handle.getFile();
+    const content = new Uint8Array(await file.arrayBuffer());
+    self.postMessage({ id, content });
+  } else if (op === "list_all") {
+    const results = [];
+    await walk(root, "", results);
+    self.postMessage({ id, results });
   }
-}
+};
 ```
 
 ```javascript
 // main.js — giao tiếp với OPFS Worker
 
-const opfsWorker = new Worker('/js/opfs_worker.js')
-const pending    = new Map()
+const opfsWorker = new Worker("/js/opfs_worker.js");
+const pending = new Map();
 
 opfsWorker.onmessage = ({ data }) => {
-  pending.get(data.id)?.(data)
-  pending.delete(data.id)
-}
+  pending.get(data.id)?.(data);
+  pending.delete(data.id);
+};
 
 function opfsWrite(path, bytes) {
-  return new Promise(resolve => {
-    const id = crypto.randomUUID()
-    pending.set(id, resolve)
-    opfsWorker.postMessage({ op: 'write', id, path, bytes })
-  })
+  return new Promise((resolve) => {
+    const id = crypto.randomUUID();
+    pending.set(id, resolve);
+    opfsWorker.postMessage({ op: "write", id, path, bytes });
+  });
 }
 
 function opfsListAll() {
-  return new Promise(resolve => {
-    const id = crypto.randomUUID()
-    pending.set(id, ({ results }) => resolve(results))
-    opfsWorker.postMessage({ op: 'list_all', id })
-  })
+  return new Promise((resolve) => {
+    const id = crypto.randomUUID();
+    pending.set(id, ({ results }) => resolve(results));
+    opfsWorker.postMessage({ op: "list_all", id });
+  });
 }
 ```
 
@@ -1577,28 +1620,28 @@ Handler loop cần await kết quả:
 // handler_worker.js — phiên bản đúng
 
 async function runHandlerLoop() {
-  const ctrl = new Int32Array(hand_sab)
+  const ctrl = new Int32Array(hand_sab);
 
   while (true) {
-    Atomics.wait(ctrl, 0, 0)
-    if (Atomics.load(ctrl, 0) !== 1) continue
+    Atomics.wait(ctrl, 0, 0);
+    if (Atomics.load(ctrl, 0) !== 1) continue;
 
-    const req_len = Atomics.load(ctrl, 1)
-    const request = deserializeRequest(new Uint8Array(hand_sab, 12, req_len))
+    const req_len = Atomics.load(ctrl, 1);
+    const request = deserializeRequest(new Uint8Array(hand_sab, 12, req_len));
 
     // await — Asyncify có thể suspend WASM stack ở đây
-    const response = await dispatchToNodeHandler(request)
+    const response = await dispatchToNodeHandler(request);
 
-    const resp = serializeResponse(response)
-    new Uint8Array(hand_sab).set(resp, 12 + req_len)
-    Atomics.store(ctrl, 2, resp.length)
-    Atomics.store(ctrl, 0, 2)
-    Atomics.notify(ctrl, 0)
+    const resp = serializeResponse(response);
+    new Uint8Array(hand_sab).set(resp, 12 + req_len);
+    Atomics.store(ctrl, 2, resp.length);
+    Atomics.store(ctrl, 0, 2);
+    Atomics.notify(ctrl, 0);
   }
 }
 
 // Không gọi runHandlerLoop() — gọi await
-runHandlerLoop()  // fire and forget, loop chạy nền
+runHandlerLoop(); // fire and forget, loop chạy nền
 ```
 
 Lưu ý: `Atomics.wait` trong Worker là synchronous blocking — gọi trước `await` là OK vì tại thời điểm đó WASM chưa suspend. Vấn đề chỉ xảy ra nếu gọi `Atomics.wait` sau khi đã vào async context — tránh pattern đó.
@@ -1647,30 +1690,32 @@ Mọi VFS operation từ npm Worker phải đi qua MessageChannel về Main:
 // npm_worker.js — thực tế
 
 async function npmInstall(args) {
-  const flags  = parseFlags(args)
-  const pkgJson = await vfsRead('project/package.json').then(JSON.parse)
+  const flags = parseFlags(args);
+  const pkgJson = await vfsRead("project/package.json").then(JSON.parse);
 
   // Resolve deps (logic thuần, không cần VFS)
-  const lock = await resolveAll(pkgJson.dependencies, flags)
+  const lock = await resolveAll(pkgJson.dependencies, flags);
 
   // Acquire lock trên Main trước khi ghi node_modules
-  const lockId = await vfsAcquireLock('project/node_modules')
+  const lockId = await vfsAcquireLock("project/node_modules");
 
   // Ghi stubs qua MessageChannel
   for (const [name, entry] of Object.entries(lock.packages)) {
-    await vfsWrite(`project/node_modules/${name}/package.json`,
-      JSON.stringify({ name, version: entry.version, main: 'index.js' }))
+    await vfsWrite(
+      `project/node_modules/${name}/package.json`,
+      JSON.stringify({ name, version: entry.version, main: "index.js" }),
+    );
   }
 
   // Prefetch CDN entries
-  await prefetchCdnEntries(lock)
+  await prefetchCdnEntries(lock);
 
   // Release lock → Main flush watch events
-  await vfsReleaseLock(lockId)
+  await vfsReleaseLock(lockId);
 
   // Ghi lockfile + package.json
-  await vfsWrite('project/package-lock.json', JSON.stringify(lock, null, 2))
-  await vfsWrite('project/package.json', JSON.stringify(pkgJson, null, 2))
+  await vfsWrite("project/package-lock.json", JSON.stringify(lock, null, 2));
+  await vfsWrite("project/package.json", JSON.stringify(pkgJson, null, 2));
 }
 ```
 
@@ -1681,11 +1726,23 @@ Tương ứng, Main cần handle thêm 2 VFS ops:
 
 port.onmessage = async ({ data }) => {
   switch (data.op) {
-    case 'read':          port.postMessage({ id: data.id, bytes: wasmVfsRead(data.path) }); break
-    case 'write':         wasmVfsWrite(data.path, data.bytes); port.postMessage({ id: data.id }); break
-    case 'acquire_lock':  port.postMessage({ id: data.id, lockId: wasmVfsAcquireLock(data.prefix) }); break
-    case 'release_lock':  wasmVfsReleaseLock(data.lockId);    port.postMessage({ id: data.id }); break
+    case "read":
+      port.postMessage({ id: data.id, bytes: wasmVfsRead(data.path) });
+      break;
+    case "write":
+      wasmVfsWrite(data.path, data.bytes);
+      port.postMessage({ id: data.id });
+      break;
+    case "acquire_lock":
+      port.postMessage({
+        id: data.id,
+        lockId: wasmVfsAcquireLock(data.prefix),
+      });
+      break;
+    case "release_lock":
+      wasmVfsReleaseLock(data.lockId);
+      port.postMessage({ id: data.id });
+      break;
   }
-}
+};
 ```
-

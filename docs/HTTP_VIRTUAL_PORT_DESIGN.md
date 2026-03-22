@@ -63,15 +63,15 @@ URL pattern `/__port__/<PORT>/<path>` được Service Worker (SW) intercept. SW
 
 ## Thành phần chính
 
-| File | Vai trò |
-|------|---------|
-| `public/sw.js` | Intercept fetch `/__port__/N/`, portMainChannels, handleVirtualTcpViaMain, serialize/deserialize |
-| `js/main.ts` | sendPortToSw, processVirtualTcpRequest, setupVirtualPort, port1.onmessage gọi handler |
-| `js/run_node.ts` | Nhận register_virtual_port, setupVirtualPort với handler đẩy virtual_tcp_request |
-| `js/tcp_worker.ts` | Bridge swSab ↔ handSab qua Atomics |
-| `js/handler_worker.ts` | Deserialize request, post handle_request, chờ handler_response |
-| `js/worker_threads_runner.ts` | setupTcpRegHook, __setupVirtualPort, nhận virtual_tcp_request, gọi Node handler |
-| `js/http_serialize.ts` | serializeRequest, deserializeRequest, serializeResponse, deserializeResponse |
+| File                          | Vai trò                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| `public/sw.js`                | Intercept fetch `/__port__/N/`, portMainChannels, handleVirtualTcpViaMain, serialize/deserialize |
+| `js/main.ts`                  | sendPortToSw, processVirtualTcpRequest, setupVirtualPort, port1.onmessage gọi handler            |
+| `js/run_node.ts`              | Nhận register_virtual_port, setupVirtualPort với handler đẩy virtual_tcp_request                 |
+| `js/tcp_worker.ts`            | Bridge swSab ↔ handSab qua Atomics                                                               |
+| `js/handler_worker.ts`        | Deserialize request, post handle_request, chờ handler_response                                   |
+| `js/worker_threads_runner.ts` | setupTcpRegHook, \_\_setupVirtualPort, nhận virtual_tcp_request, gọi Node handler                |
+| `js/http_serialize.ts`        | serializeRequest, deserializeRequest, serializeResponse, deserializeResponse                     |
 
 ## Đăng ký port
 
@@ -100,8 +100,12 @@ URL pattern `/__port__/<PORT>/<path>` được Service Worker (SW) intercept. SW
 **Giải pháp:** Fallback dùng `navigator.serviceWorker.getRegistration().then(reg => reg?.active)` để post message trực tiếp tới SW, không phụ thuộc controller.
 
 ```javascript
-const ctrl = navigator.serviceWorker.controller
-ctrl ? post(ctrl) : navigator.serviceWorker.getRegistration().then((r) => post(r?.active ?? null))
+const ctrl = navigator.serviceWorker.controller;
+ctrl
+  ? post(ctrl)
+  : navigator.serviceWorker
+      .getRegistration()
+      .then((r) => post(r?.active ?? null));
 ```
 
 ### 3. Stale mainPort / dead port
@@ -127,6 +131,7 @@ ctrl ? post(ctrl) : navigator.serviceWorker.getRegistration().then((r) => post(r
 **Vấn đề:** User chạy `curl 1` (server chưa chạy), nhấn Ctrl+C. Fetch vẫn chạy (chờ timeout 30s). Khi fetch fail, catch block gọi `writeln(...)` — nội dung lỗi in ra sau khi user đã thấy prompt mới.
 
 **Giải pháp:**
+
 - Shell: AbortController mỗi lệnh, `abortCurrentCommand()` khi Ctrl+C
 - App: Gọi `shell.abortCurrentCommand()` trong handler Ctrl+C
 - Curl: Truyền `signal: abortSignal` vào fetch, kiểm tra `abortSignal?.aborted` trước mỗi writeln, return exitCode 130 khi đã abort
@@ -138,6 +143,7 @@ Khi SW update và controller thay đổi, các port cũ mất. Shell lắng nghe
 ### 8. COEP/COOP headers
 
 Response từ handleVirtualTcpViaMain và unavailableResponse phải có:
+
 - `Cross-Origin-Opener-Policy: same-origin`
 - `Cross-Origin-Embedder-Policy: require-corp`
 
@@ -145,11 +151,11 @@ Cần cho SharedArrayBuffer và cross-origin isolation khi load trong iframe.
 
 ## Timeout trong pipeline
 
-| Vị trí | Timeout | Khi nào |
-|--------|---------|---------|
-| SW handleVirtualTcpViaMain | 30s | Main không response qua MessagePort |
-| Main processVirtualTcpRequest | 15s | tcp_worker/handler_worker/Node không trả về qua SAB |
-| tcp_worker waitWithTimeout | 30s | handler_worker không xử lý xong |
+| Vị trí                        | Timeout | Khi nào                                             |
+| ----------------------------- | ------- | --------------------------------------------------- |
+| SW handleVirtualTcpViaMain    | 30s     | Main không response qua MessagePort                 |
+| Main processVirtualTcpRequest | 15s     | tcp_worker/handler_worker/Node không trả về qua SAB |
+| tcp_worker waitWithTimeout    | 30s     | handler_worker không xử lý xong                     |
 
 ## Format serialize
 

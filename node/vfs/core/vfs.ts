@@ -1,2 +1,2 @@
-export type { VirtualFS, Stats } from './adapter'
-export { createVirtualFSAdapter } from './adapter'
+export type { VirtualFS, Stats } from "./adapter";
+export { createVirtualFSAdapter } from "./adapter";
