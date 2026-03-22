@@ -165,7 +165,13 @@ async function handleVirtualTcpViaMain(request, port, mainPort) {
       clearTimeout(td)
       respIn.close()
       if (data.error) reject(new Error(data.error))
-      else resolve(deserializeResponse(new Uint8Array(data.responseBytes)))
+      else {
+        const resp = deserializeResponse(new Uint8Array(data.responseBytes))
+        const h = new Headers(resp.headers)
+        h.set('Cross-Origin-Opener-Policy', 'same-origin')
+        h.set('Cross-Origin-Embedder-Policy', 'require-corp')
+        resolve(new Response(resp.body, { status: resp.status, headers: h }))
+      }
     }
     respIn.onmessageerror = () => { if (!done) { done = true; clearTimeout(td); respIn.close(); reject(new Error('messageerror')) } }
   })
