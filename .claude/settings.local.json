@@ -11,7 +11,12 @@
       "Bash(xargs -I{} taskkill //PID {} //F)",
       "Bash(npx tsc:*)",
       "Bash(npx --yes tsc --noEmit)",
-      "Bash(./node_modules/.bin/tsc --noEmit)"
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(findstr :4873)",
+      "Bash(taskkill:*)",
+      "Bash(cmd /c \"taskkill /PID 14636 /F\")",
+      "Bash(cmd /c \"taskkill /PID 14636 /F && echo done\")",
+      "Bash(powershell -Command \"Stop-Process -Id 14636 -Force\")"
     ]
   }
 }

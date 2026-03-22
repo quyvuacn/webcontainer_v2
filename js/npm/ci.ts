@@ -1,5 +1,6 @@
 import { parseRange, satisfies } from "./semver";
 import { CDN_BASE } from "../cdn/config";
+import { buildVersionMap } from "./version-map";
 
 export async function npmCi(
   vfsRead: (p: string) => Uint8Array | null,
@@ -8,7 +9,9 @@ export async function npmCi(
   vfsReleaseLock: (id: number) => void,
   pkgPath = "project",
   opts: { prefetch?: boolean } = {},
-) {
+): Promise<{ added: number; versionMap: Record<string, string> }> {
+  void opts;
+
   const lockBytes = vfsRead(`${pkgPath}/package-lock.json`);
   if (!lockBytes)
     throw new Error(
@@ -37,33 +40,44 @@ export async function npmCi(
   const lockId = vfsAcquireLock(`${pkgPath}/node_modules`);
 
   const pkgJsonResults = await Promise.allSettled(
-    Object.entries(lock.packages).map(async ([path, entry]: [string, { version: string }]) => {
-      const name = path.replace("node_modules/", "");
-      if (name.startsWith("@types/")) {
-        const stub = JSON.stringify({
-          name,
-          version: entry.version,
-          types: "index.d.ts",
-        });
+    Object.entries(lock.packages).map(
+      async ([path, entry]: [string, { version: string }]) => {
+        if (!path) return; // skip root package entry ("" key in lockfile v2)
+        const name = path.replace("node_modules/", "");
+        if (name.startsWith("@types/")) {
+          const stub = JSON.stringify({
+            name,
+            version: entry.version,
+            types: "index.d.ts",
+          });
+          vfsWrite(
+            `${pkgPath}/${path}/package.json`,
+            new TextEncoder().encode(stub),
+          );
+          return;
+        }
+        const r = await fetch(
+          `${CDN_BASE}/${name}@${entry.version}/package.json`,
+        );
+        if (!r.ok)
+          throw new Error(
+            `CDN: ${name}@${entry.version} package.json not found`,
+          );
+        const realPkgJson = await r.arrayBuffer();
         vfsWrite(
           `${pkgPath}/${path}/package.json`,
-          new TextEncoder().encode(stub),
+          new Uint8Array(realPkgJson),
         );
-        return;
-      }
-      const r = await fetch(
-        `${CDN_BASE}/${name}@${entry.version}/package.json`,
-      );
-      if (!r.ok)
-        throw new Error(`CDN: ${name}@${entry.version} package.json not found`);
-      const realPkgJson = await r.arrayBuffer();
-      vfsWrite(`${pkgPath}/${path}/package.json`, new Uint8Array(realPkgJson));
-    }),
+      },
+    ),
   );
   const failed = pkgJsonResults.filter((r) => r.status === "rejected").length;
   if (failed)
     console.warn(`npm: failed to fetch package.json for ${failed} package(s)`);
 
   vfsReleaseLock(lockId);
-  return { added: Object.keys(lock.packages).length };
+  return {
+    added: Object.keys(lock.packages).length,
+    versionMap: buildVersionMap(lock as Record<string, unknown>),
+  };
 }

@@ -19,14 +19,20 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+import crypto from "node:crypto";
+import os from "node:os";
+import { execSync } from "node:child_process";
 import { extract as tarExtract } from "tar-stream";
 
 const PORT = Number(process.env.PORT ?? 4873);
 const CACHE_DIR =
   process.env.CACHE_DIR ?? path.join(process.cwd(), ".pkg-cache");
+const LOCK_CACHE_DIR =
+  process.env.LOCK_CACHE_DIR ?? path.join(process.cwd(), ".lock-cache");
 const NPM_REGISTRY = process.env.NPM_REGISTRY ?? "https://registry.npmjs.org";
 
 fs.mkdirSync(CACHE_DIR, { recursive: true });
+fs.mkdirSync(LOCK_CACHE_DIR, { recursive: true });
 
 // ── URL parsing ───────────────────────────────────────────────────────────────
 
@@ -172,6 +178,64 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   }
 
   const url = req.url ?? "";
+
+  // ── Module 1: POST /resolve — nhận package.json, trả package-lock.json ────
+  //
+  //  1. hash(body) → check disk cache
+  //  2. cache hit  → trả ngay
+  //  3. cache miss → mkdir tmp/<hash>/ → write package.json
+  //                → npm install --package-lock-only --ignore-scripts
+  //                → read package-lock.json → write cache → rm tmp → trả về
+  //
+  if (req.method === "POST" && url === "/resolve") {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    const body = Buffer.concat(chunks);
+
+    const hash = crypto
+      .createHash("sha256")
+      .update(body)
+      .digest("hex")
+      .slice(0, 16);
+    const lockCachePath = path.join(LOCK_CACHE_DIR, hash, "package-lock.json");
+
+    if (fs.existsSync(lockCachePath)) {
+      const cached = fs.readFileSync(lockCachePath);
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.writeHead(200);
+      res.end(cached);
+      return;
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `npm-resolve-${hash}`);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "package.json"), body);
+
+    try {
+      console.log(`[proxy] resolving lockfile hash=${hash}`);
+      execSync(
+        "npm install --package-lock-only --ignore-scripts --prefer-offline",
+        { cwd: tmpDir, timeout: 60_000, stdio: "pipe" },
+      );
+
+      const lockContent = fs.readFileSync(
+        path.join(tmpDir, "package-lock.json"),
+      );
+      fs.mkdirSync(path.dirname(lockCachePath), { recursive: true });
+      fs.writeFileSync(lockCachePath, lockContent);
+
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(200);
+      res.end(lockContent);
+    } catch (e) {
+      res.writeHead(500);
+      res.end(`npm resolve failed: ${(e as Error).message}`);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+    return;
+  }
 
   // ── Registry proxy: GET /registry/<pkg>  →  forward to npm registry ──────
   // Allows browser to fetch packuments without hitting registry directly

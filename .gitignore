@@ -8,6 +8,7 @@ dist/
 .vscode/
 *.local
 .pkg-cache/
+.lock-cache/
 
 node-src/
 emsdk/
