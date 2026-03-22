@@ -166,18 +166,32 @@ export class HttpServer extends EventEmitter {
       | ((
           port: number,
           handler: (req: IncomingMessage, res: ServerResponse) => void,
-        ) => (() => void) | void)
+        ) => (() => void) | Promise<() => void> | void)
       | undefined;
 
     if (this._port > 0 && this._handler && typeof setup === "function") {
       try {
-        const release = setup(this._port, this._handler);
-        if (typeof release === "function") this._releaseHandle = release;
+        const result = setup(this._port, this._handler);
+        if (result && typeof (result as Promise<() => void>).then === "function") {
+          (result as Promise<() => void>)
+            .then((release: unknown) => {
+              if (typeof release === "function") this._releaseHandle = release as () => void;
+              cb?.();
+              this.emit("listening");
+            })
+            .catch((e: unknown) => {
+              this.emit("error", e);
+              (cb as ((err?: Error) => void) | undefined)?.(e as Error);
+              if (this.listenerCount("error") === 0 && (!cb || cb.length === 0)) throw e;
+            });
+          return this;
+        }
+        if (typeof result === "function") this._releaseHandle = result as () => void;
       } catch (e) {
-        console.warn(
-          `[http] Virtual TCP setup for port ${this._port} failed:`,
-          e,
-        );
+        this.emit("error", e);
+        (cb as ((err?: Error) => void) | undefined)?.(e as Error);
+        if (this.listenerCount("error") === 0 && (!cb || cb.length === 0)) throw e;
+        return this;
       }
     }
     if (this._handler && !this._releaseHandle) this._releaseHandle = addActiveHandle();

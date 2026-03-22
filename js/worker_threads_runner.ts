@@ -7,6 +7,7 @@
  * tcpRegPort: when Node http.createServer().listen(port) is called, we register the port with Main.
  */
 
+import { ProcessExitError } from '../node/polyfills/process'
 import { Buffer } from 'buffer'
 import { addActiveHandle } from '../node/polyfills/active-handles'
 import { IncomingMessage, ServerResponse } from '../node/polyfills/http'
@@ -16,6 +17,16 @@ import { runNode } from '../node/cli'
 import { PathUtils } from '../node/vfs/core/path'
 
 let parentPortListeners: ((data: unknown) => void)[] = []
+let workerTerminal: { write: (t: string) => void; writeError?: (t: string) => void } | null = null
+
+self.addEventListener('unhandledrejection', (e) => {
+  if (workerTerminal && !(e.reason instanceof ProcessExitError)) {
+    e.preventDefault()
+    const msg = e.reason instanceof Error ? e.reason.message : String(e.reason)
+    ;(workerTerminal.writeError ?? workerTerminal.write)(msg + '\n')
+    self.postMessage({ type: 'exit', data: 1 })
+  }
+})
 
 const parentPort = {
   postMessage(data: unknown, _transfer?: Transferable[]) {
@@ -120,9 +131,12 @@ function setupSpawnHook() {
 }
 
 function setupTcpRegHook(tcpRegPort: MessagePort) {
+  const clientId = crypto.randomUUID()
+  const registeredPorts = new Set<number>()
   const g = globalThis as Record<string, unknown>
-  g.__setupVirtualPort = (port: number, handler: (req: IncomingMessage, res: ServerResponse) => void) => {
+  g.__setupVirtualPort = (port: number, handler: (req: IncomingMessage, res: ServerResponse) => void): Promise<() => void> => {
     const release = addActiveHandle()
+    const { port1: ackIn, port2: ackOut } = new MessageChannel()
     const { port1, port2 } = new MessageChannel()
     port1.onmessage = ({ data }: MessageEvent<{ type: string; requestId?: string; method?: string; url?: string; headers?: [string, string][]; body?: number[] }>) => {
       if (data.type !== 'virtual_tcp_request' || !data.requestId) return
@@ -164,8 +178,29 @@ function setupTcpRegHook(tcpRegPort: MessagePort) {
         res.end((e as Error)?.message ?? String(e))
       }
     }
-    tcpRegPort.postMessage({ type: 'register_virtual_port', port, requestPort: port2 }, [port2])
-    return release
+    tcpRegPort.postMessage({ type: 'register_virtual_port', port, requestPort: port2, ackPort: ackOut, clientId }, [port2, ackOut])
+    return new Promise<() => void>((resolve, reject) => {
+      ackIn.onmessage = ({ data }: MessageEvent<{ ok?: boolean; error?: string }>) => {
+        ackIn.close()
+        if (data.error) {
+          release()
+          reject(Object.assign(new Error(data.error), { code: 'EADDRINUSE' }))
+        } else {
+          registeredPorts.add(port)
+          resolve(() => {
+            registeredPorts.delete(port)
+            release()
+          })
+        }
+      }
+    })
+  }
+  ;(globalThis as { __wcHasTcpReg?: boolean }).__wcHasTcpReg = true
+  g.__unregisterVirtualPorts = () => {
+    for (const port of registeredPorts) {
+      tcpRegPort.postMessage({ type: 'unregister_virtual_port', port, clientId })
+    }
+    registeredPorts.clear()
   }
 }
 
@@ -181,6 +216,7 @@ async function runInWorker(vfsPort: MessagePort, terminal: { write: (t: string) 
     }
   }
   const exitCode = await runNode(args, createPortVfs(vfsPort), terminal, { cwd, env })
+  ;(globalThis as { __unregisterVirtualPorts?: () => void }).__unregisterVirtualPorts?.()
   self.postMessage({ type: 'exit', data: exitCode })
 }
 
@@ -216,6 +252,7 @@ self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: Message
       write: (t: string) => self.postMessage({ type: 'stdout', data: t }),
       writeError: (t: string) => self.postMessage({ type: 'stderr', data: t }),
     }
+    workerTerminal = terminal
 
     if (args) {
       try {
@@ -246,6 +283,8 @@ self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: Message
       const msg = e instanceof Error ? e.message : String(e)
       self.postMessage({ type: 'error', data: msg })
       self.postMessage({ type: 'exit', data: 1 })
+    } finally {
+      workerTerminal = null
     }
     return
   }

@@ -77,6 +77,9 @@ self.addEventListener('message', ({ data, source }) => {
     }
     if (data.ackPort) { data.ackPort.postMessage('ok'); data.ackPort.close() }
   }
+  if (data.type === 'unregister_port') {
+    portMainChannels.delete(data.port)
+  }
   if (data.type === 'vfs_response') {
     const resolve = pendingVfs.get(data.requestId)
     if (resolve) {

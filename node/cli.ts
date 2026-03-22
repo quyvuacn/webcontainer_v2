@@ -90,7 +90,7 @@ export async function runNode(
   )
 
   const g = globalThis as Record<string, unknown>
-  if (!g.__setupVirtualPort) g.__setupVirtualPort = createSetupVirtualPortHook()
+  if (!g.__setupVirtualPort && !(g.__wcHasTcpReg as boolean)) g.__setupVirtualPort = createSetupVirtualPortHook()
   const stack = (g.__wcProcessStack as ProcessPolyfill[]) ?? []
   stack.push(process)
   g.__wcProcessStack = stack

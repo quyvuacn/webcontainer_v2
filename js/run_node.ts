@@ -1,6 +1,6 @@
 import { runNode } from '../node/cli'
 import { createVirtualFSAdapter } from '../node/vfs/core/adapter'
-import { registerWorkerVfsPort, setupVirtualPort } from './main'
+import { registerWorkerVfsPort, setupVirtualPort, teardownVirtualPort } from './main'
 
 export type WorkerRefSlot = {
   current: { worker: Worker; resolve: (code: number) => void; children: Worker[] } | null
@@ -11,6 +11,7 @@ export function createNodeRunner(
   terminal: { write: (s: string) => void; writeError?: (s: string) => void },
   workerRefSlot: WorkerRefSlot,
 ) {
+  const clientId = crypto.randomUUID()
   return async (args: string[], opts: { cwd?: string; env?: Record<string, string> } = {}): Promise<number> => {
     const { port1, port2 } = new MessageChannel()
     registerWorkerVfsPort(port1)
@@ -18,7 +19,11 @@ export function createNodeRunner(
     const { port1: tcpReg1, port2: tcpReg2 } = new MessageChannel()
     type PortPending = Map<string, (d: { status: number; headers: [string, string][]; body: number[] }) => void>
     const workerPortMap = new Map<number, { reqPort: MessagePort; pending: PortPending }>()
-    tcpReg1.onmessage = ({ data }: MessageEvent<{ type: string; port?: number; requestPort?: MessagePort }>) => {
+    tcpReg1.onmessage = ({ data }: MessageEvent<{ type: string; port?: number; requestPort?: MessagePort; ackPort?: MessagePort; clientId?: string }>) => {
+      if (data.type === 'unregister_virtual_port' && data.port != null && data.clientId) {
+        teardownVirtualPort(data.port, data.clientId)
+        return
+      }
       if (data.type === 'register_virtual_port' && data.port != null && data.requestPort) {
         const port = data.port
         const reqPort = data.requestPort
@@ -33,7 +38,8 @@ export function createNodeRunner(
           }
         }
         workerPortMap.set(port, { reqPort, pending })
-        setupVirtualPort(port, (req: { method?: string; url?: string; path?: string; headers?: Record<string, string>; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown }, res: { setHeader: (k: string, v: string) => void; end: (b?: string | Uint8Array) => void }) => {
+        const cId = data.clientId ?? clientId
+        const result = setupVirtualPort(port, (req: { method?: string; url?: string; path?: string; headers?: Record<string, string>; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown }, res: { setHeader: (k: string, v: string) => void; end: (b?: string | Uint8Array) => void }) => {
           const headers: [string, string][] = req.headers ? Object.entries(req.headers) : []
           const body: number[] = []
           const path = (req.path || '/').replace(/^\/__port__\/\d+/, '') || '/'
@@ -64,7 +70,11 @@ export function createNodeRunner(
           } else {
             collect()
           }
-        })
+        }, cId)
+        if (data.ackPort) {
+          if (result.ok === false) data.ackPort.postMessage({ error: result.error })
+          else data.ackPort.postMessage({ ok: true })
+        }
       }
     }
 
@@ -85,10 +95,15 @@ export function createNodeRunner(
           const { port1: p1, port2: p2 } = new MessageChannel()
           registerWorkerVfsPort(p1)
           const { port1: tcpRegC1, port2: tcpRegC2 } = new MessageChannel()
-          tcpRegC1.onmessage = ({ data: d }: MessageEvent<{ type: string; port?: number; requestPort?: MessagePort }>) => {
+          tcpRegC1.onmessage = ({ data: d }: MessageEvent<{ type: string; port?: number; requestPort?: MessagePort; ackPort?: MessagePort; clientId?: string }>) => {
+            if (d.type === 'unregister_virtual_port' && d.port != null && d.clientId) {
+              teardownVirtualPort(d.port, d.clientId)
+              return
+            }
             if (d.type === 'register_virtual_port' && d.port != null && d.requestPort) {
               const port = d.port
               const reqPort = d.requestPort
+              const cId = d.clientId ?? crypto.randomUUID()
               const pending = new Map<string, (d: { status: number; headers: [string, string][]; body: number[] }) => void>()
               reqPort.onmessage = ({ data: r }: MessageEvent<{ type: string; requestId?: string; status?: number; headers?: [string, string][]; body?: number[] }>) => {
                 if (r.type === 'virtual_tcp_response' && r.requestId) {
@@ -97,7 +112,7 @@ export function createNodeRunner(
                 }
               }
               workerPortMap.set(port, { reqPort, pending })
-              setupVirtualPort(port, (req: { method?: string; url?: string; path?: string; headers?: Record<string, string>; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown }, res: { setHeader: (k: string, v: string) => void; end: (b?: string | Uint8Array) => void }) => {
+              const result = setupVirtualPort(port, (req: { method?: string; url?: string; path?: string; headers?: Record<string, string>; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown }, res: { setHeader: (k: string, v: string) => void; end: (b?: string | Uint8Array) => void }) => {
                 const headers: [string, string][] = req.headers ? Object.entries(req.headers) : []
                 const body: number[] = []
                 const path = ((req as { path?: string }).path || '/').replace(/^\/__port__\/\d+/, '') || '/'
@@ -110,7 +125,11 @@ export function createNodeRunner(
                   pr.then(({ status, headers: h, body: b }) => { h.forEach(([k, v]) => res.setHeader(k, v)); (res as { statusCode?: number }).statusCode = status; res.end(b.length ? new Uint8Array(b) : '') })
                 }
                 if (req.on) { req.on('data', (chunk: Uint8Array) => { body.push(...chunk) }); req.on('end', collect) } else collect()
-              })
+              }, cId)
+              if (d.ackPort) {
+                if (result.ok === false) d.ackPort.postMessage({ error: result.error })
+                else d.ackPort.postMessage({ ok: true })
+              }
             }
           }
           const child = new Worker(new URL('./worker_threads_runner.ts', import.meta.url), { type: 'module' })

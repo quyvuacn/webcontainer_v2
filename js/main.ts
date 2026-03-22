@@ -7,6 +7,8 @@ import { createCdnVfsProxy } from './cdn/vfs_proxy'
 
 let vfs: { read: (p: string) => Uint8Array | null; write: (p: string, c: Uint8Array | string) => void; exists: (p: string) => boolean; acquireLock: (p: string) => number; releaseLock: (id: number) => void; delete?: (p: string) => boolean; invalidate?: (p: string) => void; preload?: (p: string, c: Uint8Array) => void } | null = null
 const portHandlers = new Map<number, (req: unknown, res: unknown) => void>()
+const portOwners = new Map<number, string>()
+const portWorkers = new Map<number, { tcpWorker: Worker; handlerWorker: Worker }>()
 // SAB per port — persists across SW restarts so reRegisterPorts can resend buffer
 const portSabs = new Map<number, SharedArrayBuffer>()
 let controllerchangeAttached = false
@@ -116,6 +118,27 @@ function reRegisterPorts() {
   }
 }
 
+function unregisterPortFromSw(port: number) {
+  const post = (sw: ServiceWorker | null) => sw?.postMessage({ type: 'unregister_port', port })
+  const ctrl = navigator.serviceWorker.controller
+  ctrl ? post(ctrl) : navigator.serviceWorker.getRegistration().then((r) => post(r?.active ?? null))
+}
+
+export function teardownVirtualPort(port: number, clientId: string): boolean {
+  if (portOwners.get(port) !== clientId) return false
+  const workers = portWorkers.get(port)
+  if (workers) {
+    workers.tcpWorker.terminate()
+    workers.handlerWorker.terminate()
+    portWorkers.delete(port)
+  }
+  portSabs.delete(port)
+  portHandlers.delete(port)
+  portOwners.delete(port)
+  unregisterPortFromSw(port)
+  return true
+}
+
 async function processVirtualTcpRequest(port: number, requestBytes: Uint8Array): Promise<Uint8Array> {
   const swSab = portSabs.get(port)
   if (!swSab) throw new Error('No SAB for port ' + port)
@@ -160,13 +183,19 @@ function sendPortToSw(port: number, swSab: SharedArrayBuffer) {
   ctrl ? post(ctrl) : navigator.serviceWorker.getRegistration().then((r) => post(r?.active ?? null))
 }
 
-export function setupVirtualPort(port: number, handler: (req: unknown, res: unknown) => void) {
+export function setupVirtualPort(port: number, handler: (req: unknown, res: unknown) => void, clientId?: string): { ok: boolean; error?: string } {
+  const owner = portOwners.get(port)
+  if (owner !== undefined && owner !== clientId) {
+    return { ok: false, error: `EADDRINUSE: address already in use :::${port}` }
+  }
   if (portSabs.has(port)) {
     portHandlers.set(port, handler)
     sendPortToSw(port, portSabs.get(port)!)
-    return
+    if (clientId) portOwners.set(port, clientId)
+    return { ok: true }
   }
 
+  if (clientId) portOwners.set(port, clientId)
   portHandlers.set(port, handler)
 
   const swSab = new SharedArrayBuffer(SAB_SIZE)
@@ -180,6 +209,7 @@ export function setupVirtualPort(port: number, handler: (req: unknown, res: unkn
   const handlerWorker = new Worker('/js/handler_worker.ts', { type: 'module' })
   handlerWorker.postMessage({ hand_sab: handSab, mainPort: port2, port }, [port2])
   handlerWorker.postMessage({ type: 'run' })
+  portWorkers.set(port, { tcpWorker, handlerWorker })
 
   port1.onmessage = ({ data: msg }: MessageEvent<{ type: string; port?: number; request?: unknown }>) => {
     if (msg.type === 'handle_request') {
@@ -224,6 +254,7 @@ export function setupVirtualPort(port: number, handler: (req: unknown, res: unkn
     controllerchangeAttached = true
     navigator.serviceWorker.addEventListener('controllerchange', reRegisterPorts)
   }
+  return { ok: true }
 }
 
 export function createServer(handler: (req: unknown, res: unknown) => void) {
