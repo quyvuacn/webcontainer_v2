@@ -1,0 +1,9 @@
+node_modules
+dist
+.pkg-cache
+.lock-cache
+proxy-server/node_modules
+package-lock.json
+*.log
+.git
+.gitignore

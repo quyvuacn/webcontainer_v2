@@ -75,13 +75,19 @@ export async function npmInstall(
         vfsWrite(
           `${pkgPath}/${lockPath}/package.json`,
           new TextEncoder().encode(
-            JSON.stringify({ name, version: entry.version, types: "index.d.ts" }),
+            JSON.stringify({
+              name,
+              version: entry.version,
+              types: "index.d.ts",
+            }),
           ),
         );
         return;
       }
 
-      const r = await fetch(`${CDN_BASE}/${name}@${entry.version}/package.json`);
+      const r = await fetch(
+        `${CDN_BASE}/${name}@${entry.version}/package.json`,
+      );
       if (!r.ok)
         throw new Error(`CDN: ${name}@${entry.version} package.json not found`);
       vfsWrite(

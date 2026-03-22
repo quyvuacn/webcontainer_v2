@@ -1,0 +1,21 @@
+FROM node:22-alpine
+WORKDIR /app
+
+# Install dependencies
+COPY proxy-server/package*.json ./
+RUN npm ci --omit=dev
+
+# Copy source
+COPY proxy-server/index.ts ./
+
+# Persist package cache across container restarts
+VOLUME ["/data"]
+
+ENV PORT=4873
+ENV CACHE_DIR=/data/pkg-cache
+ENV LOCK_CACHE_DIR=/data/lock-cache
+
+EXPOSE 4873
+
+# Node 22 supports --experimental-strip-types (no compilation needed)
+CMD ["node", "--experimental-strip-types", "index.ts"]

@@ -10,10 +10,11 @@ import {
 } from "./opfs_bridge";
 import { VFS_PREFIX } from "./config";
 import { createCdnVfsProxy } from "./cdn/vfs_proxy";
-import {
-  lazyFetchNodeModulesFile,
-} from "./cdn/lazy_node_modules";
+import { lazyFetchNodeModulesFile } from "./cdn/lazy_node_modules";
 import { handleSyncFsRequest } from "./lib/sync_vfs_channel";
+import { getBuiltinEsmContent } from "../node/transform/esbuild-vfs-plugin";
+import { rewriteBareSpecifiersInModule } from "../node/transform/bare-specifier-rewrite";
+import { createVirtualFSAdapter } from "../node/vfs/core/adapter";
 
 let vfs: {
   read: (p: string) => Uint8Array | null;
@@ -25,6 +26,8 @@ let vfs: {
   invalidate?: (p: string) => void;
   preload?: (p: string, c: Uint8Array) => void;
 } | null = null;
+/** Cache of rewritten JS files (bare imports → /__wc__/... URLs) for SW serving. */
+const vfsRewriteCache = new Map<string, Uint8Array>();
 const portHandlers = new Map<number, (req: unknown, res: unknown) => void>();
 const portOwners = new Map<number, string>();
 const portWorkers = new Map<
@@ -72,9 +75,7 @@ function handleVfsPort(port: MessagePort) {
     delete?: (p: string) => boolean;
     exists?: (p: string) => boolean;
     readdir?: (p: string) => string[] | Promise<string[]>;
-    stat?: (
-      p: string,
-    ) => {
+    stat?: (p: string) => {
       isFile: () => boolean;
       isDirectory: () => boolean;
       size?: number;
@@ -574,8 +575,53 @@ async function bootstrap() {
       bytes?: number[] | null;
     }>) => {
       if (data.type === "vfs_request") {
-        let bytes = getVfsRead(data.path!);
-        if (!bytes) bytes = await cdnProxy.read(data.path!);
+        const reqPath = data.path!;
+        let bytes: Uint8Array | null = null;
+
+        // Serve Node.js builtin ESM stubs (e.g. "builtin/path", "builtin/fs")
+        if (reqPath.startsWith("builtin/")) {
+          const builtinName = reqPath.slice("builtin/".length);
+          try {
+            const stub = getBuiltinEsmContent(builtinName);
+            bytes = new TextEncoder().encode(stub);
+          } catch {
+            bytes = null;
+          }
+        } else {
+          // Check rewrite cache first (for already-rewritten JS files)
+          bytes = vfsRewriteCache.get(reqPath) ?? null;
+          if (!bytes) {
+            bytes = getVfsRead(reqPath);
+            if (!bytes) bytes = await cdnProxy.read(reqPath);
+            // Lazily rewrite bare specifiers in JS files so transitive imports
+            // (e.g. node_modules/vite/dist/node/index.js) work in the browser.
+            if (
+              bytes &&
+              vfs &&
+              /\.(m?js|cjs)$/.test(reqPath) &&
+              !reqPath.includes(".timestamp-")
+            ) {
+              try {
+                const src = new TextDecoder().decode(bytes);
+                const vfsAdapter = createVirtualFSAdapter(vfs);
+                const fromFile = "/" + reqPath.replace(/^\//, "");
+                const rewritten = await rewriteBareSpecifiersInModule(
+                  src,
+                  fromFile,
+                  vfsAdapter,
+                );
+                if (rewritten !== src) {
+                  bytes = new TextEncoder().encode(rewritten);
+                }
+                // Cache result (rewritten or original) to avoid re-processing
+                vfsRewriteCache.set(reqPath, bytes!);
+              } catch {
+                // If rewriting fails, serve original bytes
+              }
+            }
+          }
+        }
+
         navigator.serviceWorker.controller?.postMessage({
           type: "vfs_response",
           requestId: data.requestId,

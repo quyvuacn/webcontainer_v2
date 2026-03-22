@@ -4,7 +4,7 @@ const portMainChannels = new Map();
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open("static-v5").then((c) =>
+    caches.open("static-v7").then((c) =>
       c
         .addAll([
           "/",
@@ -131,10 +131,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname.startsWith("/__r__/")) {
-    event.respondWith(
-      serveVfsFile(url.pathname.replace(/^\/__r__\/?/, ""), event.clientId),
-    );
+  // Match any VFS prefix: /__r__/ (dev sentinel), /__wc__/ (bare-specifier rewrite),
+  // or /__xxxx__/ (random prod prefix). All route to serveVfsFile.
+  const vfsPrefixMatch = url.pathname.match(/^\/__[^/]+__\/(.*)/s);
+  if (vfsPrefixMatch) {
+    event.respondWith(serveVfsFile(vfsPrefixMatch[1], event.clientId));
     return;
   }
 

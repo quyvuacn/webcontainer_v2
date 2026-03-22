@@ -1,0 +1,27 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - proxy
+    restart: unless-stopped
+
+  proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    ports:
+      - "4873:4873"
+    volumes:
+      - pkg-cache:/data
+    environment:
+      PORT: "4873"
+      CACHE_DIR: /data/pkg-cache
+      LOCK_CACHE_DIR: /data/lock-cache
+    restart: unless-stopped
+
+volumes:
+  pkg-cache:

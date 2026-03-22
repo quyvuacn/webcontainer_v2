@@ -120,8 +120,8 @@ Resolver cần đọc `package.json` của mỗi package để `resolveEntry`. N
 
 ```ts
 async function ensurePackageJson(pkgRoot, pkgName, version, vfsRead, vfsWrite) {
-  const p = `${pkgRoot}/package.json`
-  if (vfsRead(p)) return  // đã có
+  const p = `${pkgRoot}/package.json`;
+  if (vfsRead(p)) return; // đã có
   // fetch từ proxy: GET /pkgName@version/package.json
   // write vào VFS
 }
@@ -141,9 +141,9 @@ Lockfile có `integrity` (sha512). Verify sau khi fetch, trước khi write VFS.
 ```ts
 async function verifyIntegrity(bytes: Uint8Array, integrity: string) {
   // integrity = "sha512-<base64>"
-  const hash = await crypto.subtle.digest("SHA-512", bytes)
-  const b64 = btoa(String.fromCharCode(...new Uint8Array(hash)))
-  if (`sha512-${b64}` !== integrity) throw new Error("integrity mismatch")
+  const hash = await crypto.subtle.digest("SHA-512", bytes);
+  const b64 = btoa(String.fromCharCode(...new Uint8Array(hash)));
+  if (`sha512-${b64}` !== integrity) throw new Error("integrity mismatch");
 }
 ```
 
@@ -187,14 +187,14 @@ Pre-fetch `package.json` của top-level deps sau khi install giúp lần bundle
 
 ## Thứ tự implement
 
-| Bước | Module | Ghi chú |
-|------|--------|---------|
-| 1 | `buildVersionMap` | Nền tảng, không phụ thuộc gì |
-| 2 | Proxy `/resolve` | Độc lập với client |
-| 3 | `ensurePackageJson` | Cần versionMap |
-| 4 | `resolveEntry` + `resolveImport` | Cần package.json trong VFS |
-| 5 | `npmInstall` client | Kết nối tất cả lại |
-| 6 | Integrity check | Thêm vào fetcher cuối cùng |
+| Bước | Module                           | Ghi chú                      |
+| ---- | -------------------------------- | ---------------------------- |
+| 1    | `buildVersionMap`                | Nền tảng, không phụ thuộc gì |
+| 2    | Proxy `/resolve`                 | Độc lập với client           |
+| 3    | `ensurePackageJson`              | Cần versionMap               |
+| 4    | `resolveEntry` + `resolveImport` | Cần package.json trong VFS   |
+| 5    | `npmInstall` client              | Kết nối tất cả lại           |
+| 6    | Integrity check                  | Thêm vào fetcher cuối cùng   |
 
 ---
 

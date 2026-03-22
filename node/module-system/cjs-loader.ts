@@ -204,7 +204,12 @@ export class CJSLoader {
         }
       }
     } else {
-      const result = await this.transform.transform(content, resolved, "cjs", tsconfigRaw);
+      const result = await this.transform.transform(
+        content,
+        resolved,
+        "cjs",
+        tsconfigRaw,
+      );
       code = result.code;
     }
 

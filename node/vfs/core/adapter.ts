@@ -11,6 +11,15 @@ export interface VirtualFS {
   readdir(path: string): Promise<string[]>;
   readFileSync?(path: string, encoding?: string): string | Uint8Array;
   existsSync?(path: string): boolean;
+  appendFile?(path: string, data: string | Uint8Array): Promise<void>;
+  rename?(oldPath: string, newPath: string): Promise<void>;
+  copyFile?(src: string, dest: string): Promise<void>;
+  watch?(
+    path: string,
+    recursive: boolean,
+    callback: (ev: { type: string; path: string }) => void,
+  ): unknown;
+  unwatch?(handle: unknown): void;
 }
 
 export interface Stats {

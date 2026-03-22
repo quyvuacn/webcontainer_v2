@@ -16,7 +16,10 @@
       "Bash(taskkill:*)",
       "Bash(cmd /c \"taskkill /PID 14636 /F\")",
       "Bash(cmd /c \"taskkill /PID 14636 /F && echo done\")",
-      "Bash(powershell -Command \"Stop-Process -Id 14636 -Force\")"
+      "Bash(powershell -Command \"Stop-Process -Id 14636 -Force\")",
+      "Bash(find C:UsersvuvieVideosDesktopprojectswebcontainer_v2 -type f \\\\\\(-name nginx* -o -name *.conf -o -name *proxy* \\\\\\))",
+      "Bash(grep -r \"5173\\\\|localhost\\\\|port\" C:UsersvuvieVideosDesktopprojectswebcontainer_v2/*.md)",
+      "Bash(cmd //c \"taskkill /PID 6888 /F\")"
     ]
   }
 }

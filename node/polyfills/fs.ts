@@ -3,7 +3,6 @@
  */
 
 import { PathUtils } from "../vfs/core/path";
-import { rewriteBareSpecifiersInModule } from "../transform/bare-specifier-rewrite";
 import type { VirtualFS } from "../vfs/core/vfs";
 import type { Stats } from "../vfs/core/inode";
 import type { FileSource } from "../file-source/types";
@@ -760,13 +759,6 @@ export function createFsPolyfill(
           if (len === 0) {
             data =
               "export default { root: '.', server: { port: 5173 }, clearScreen: false, optimizeDeps: { entries: [] } };\n";
-            len = data.length;
-          } else if (typeof data === "string") {
-            data = await rewriteBareSpecifiersInModule(
-              data,
-              PathUtils.join(getCwd(), "vite.config.mjs"),
-              vfs,
-            );
             len = data.length;
           }
         }

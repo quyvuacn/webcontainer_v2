@@ -21,10 +21,7 @@ export function buildVersionMap(
     }
   } else if (lockfile.dependencies) {
     // v1 — nested dependencies
-    const walk = (
-      deps: Record<string, LockDep>,
-      prefix: string,
-    ) => {
+    const walk = (deps: Record<string, LockDep>, prefix: string) => {
       for (const [name, info] of Object.entries(deps)) {
         const key = `${prefix}node_modules/${name}`;
         if (info.version) map[key] = info.version;

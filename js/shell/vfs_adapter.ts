@@ -3,9 +3,7 @@ export function createShellVfsAdapter(ramVfs: {
   write: (p: string, c: Uint8Array | string) => void;
   readdir?: (p: string) => string[];
   exists?: (p: string) => boolean;
-  stat?: (
-    p: string,
-  ) => {
+  stat?: (p: string) => {
     isFile: () => boolean;
     isDirectory: () => boolean;
     size?: number;
