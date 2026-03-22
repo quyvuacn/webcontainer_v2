@@ -181,6 +181,110 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
     return { exitCode: 0 }
   },
 
+  curl: async ({ args, vfs, cwd, writeln, write }) => {
+    const argv = args as string[]
+
+    // Parse flags
+    let method = 'GET'
+    const headers: Record<string, string> = {}
+    let data: string | undefined
+    let outputFile: string | undefined
+    let verbose = false
+    let silent = false
+    let includeHeaders = false
+    let headOnly = false
+    let url: string | undefined
+
+    for (let i = 0; i < argv.length; i++) {
+      const a = argv[i]
+      if (a === '-X' || a === '--request')          { method = argv[++i] ?? method }
+      else if (a === '-H' || a === '--header')       { const h = argv[++i] ?? ''; const ci = h.indexOf(':'); if (ci > 0) headers[h.slice(0, ci).trim().toLowerCase()] = h.slice(ci + 1).trim() }
+      else if (a === '-d' || a === '--data' || a === '--data-raw') { data = argv[++i] }
+      else if (a === '--json')                       { data = argv[++i]; headers['content-type'] ??= 'application/json'; headers['accept'] ??= 'application/json' }
+      else if (a === '-o' || a === '--output')       { outputFile = argv[++i] }
+      else if (a === '-v' || a === '--verbose')      { verbose = true }
+      else if (a === '-s' || a === '--silent')       { silent = true }
+      else if (a === '-i' || a === '--include')      { includeHeaders = true }
+      else if (a === '-I' || a === '--head')         { headOnly = true; method = 'HEAD' }
+      else if (a === '-L' || a === '--location')     { /* fetch follows redirects by default */ }
+      else if (!a.startsWith('-'))                   { url = a }
+      else if (a.startsWith('-X')) { method = a.slice(2) }
+    }
+
+    if (!url) {
+      writeln(A.red + 'curl: no URL specified' + A.reset)
+      writeln('Usage: curl [-X method] [-H "Header: value"] [-d data] [-o file] [-viIsL] <url>')
+      return { exitCode: 1 }
+    }
+
+    // Rewrite localhost:PORT to /__port__/PORT/path so SW can intercept
+    let fetchUrl = url
+    try {
+      const u = new URL(url.startsWith('http') ? url : 'http://' + url)
+      const isLocal = u.hostname === 'localhost' || u.hostname === '127.0.0.1'
+      if (isLocal && u.port) {
+        fetchUrl = `/__port__/${u.port}${u.pathname}${u.search}`
+      }
+    } catch { /* keep original url */ }
+
+    if (data && method === 'GET') method = 'POST'
+
+    if (verbose) {
+      writeln(A.dim + `> ${method} ${fetchUrl}` + A.reset)
+      for (const [k, v] of Object.entries(headers)) writeln(A.dim + `> ${k}: ${v}` + A.reset)
+      if (data) writeln(A.dim + `> [body: ${data.length} bytes]` + A.reset)
+    }
+
+    let resp: Response
+    try {
+      resp = await fetch(fetchUrl, {
+        method,
+        headers,
+        body: data ?? undefined,
+      })
+    } catch (e) {
+      if (!silent) writeln(A.red + `curl: ${(e as Error)?.message ?? e}` + A.reset)
+      return { exitCode: 1 }
+    }
+
+    if (verbose || includeHeaders) {
+      writeln(A.dim + `< HTTP/${resp.status} ${resp.statusText || ''}` + A.reset)
+      resp.headers.forEach((v, k) => writeln(A.dim + `< ${k}: ${v}` + A.reset))
+      writeln('')
+    } else if (!silent) {
+      // show status line for non-2xx
+      if (!resp.ok) writeln(A.yellow + `HTTP ${resp.status} ${resp.statusText}` + A.reset)
+    }
+
+    if (headOnly) return { exitCode: resp.ok ? 0 : 1 }
+
+    const buf = await resp.arrayBuffer()
+    const bytes = new Uint8Array(buf)
+
+    if (outputFile) {
+      const outPath = Path.resolve(cwd as string, outputFile)
+      try {
+        await (vfs as { writeFile: (p: string, b: Uint8Array) => Promise<void> }).writeFile(outPath, bytes)
+        if (!silent) writeln(`  % Total    % Received\n100  ${bytes.length}  100  ${bytes.length}`)
+      } catch (e) {
+        writeln(A.red + `curl: cannot write to ${outputFile}: ${(e as Error)?.message ?? e}` + A.reset)
+        return { exitCode: 1 }
+      }
+    } else {
+      // Try to decode as UTF-8 text; fall back to hex dump for binary
+      const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+      const hasBinary = bytes.some(b => b === 0)
+      if (hasBinary) {
+        writeln(A.yellow + `[binary data: ${bytes.length} bytes — use -o <file> to save]` + A.reset)
+      } else {
+        ;(write as (s: string) => void)(text)
+        if (text && !text.endsWith('\n')) writeln('')
+      }
+    }
+
+    return { exitCode: resp.ok ? 0 : 1 }
+  },
+
   node: async ({ args, cwd, writeln, spawnNode }) => {
     if (!(args as string[]).length) {
       writeln(A.red + 'node: usage: node <file> [args...]' + A.reset)
