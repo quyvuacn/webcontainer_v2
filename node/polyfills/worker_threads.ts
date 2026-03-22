@@ -118,12 +118,23 @@ export class WorkerThreadWorker extends EventEmitter {
 // ── Exports ────────────────────────────────────────────────────────────────────
 
 export function createWorkerThreadsPolyfill(): Record<string, unknown> {
+  const g = globalThis as Record<string, unknown>;
   return {
     Worker: WorkerThreadWorker,
-    isMainThread: true,
-    parentPort: null,
-    workerData: null,
-    threadId: 0,
+    // Use dynamic getters so values reflect the actual execution context.
+    // worker_threads_runner.ts sets these globals when running as a worker thread.
+    get isMainThread() {
+      return typeof g.isMainThread === "boolean" ? g.isMainThread : true;
+    },
+    get parentPort() {
+      return g.parentPort ?? null;
+    },
+    get workerData() {
+      return g.workerData ?? null;
+    },
+    get threadId() {
+      return typeof g.threadId === "number" ? g.threadId : 0;
+    },
     receiveMessageOnPort: () => null,
     MessageChannel: globalThis.MessageChannel,
     MessagePort: globalThis.MessagePort,

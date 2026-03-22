@@ -12,13 +12,15 @@ export class TypeScriptTransformer {
     code: string,
     filePath: string,
     format: "cjs" | "esm",
+    tsconfigRaw?: string,
   ): Promise<TransformResult> {
     const loader = detectLoader(filePath) as esbuild.Loader;
     const result = await safeTransform(code, {
       loader,
       format,
-      target: "es2022",
+      target: "esnext",
       sourcemap: "inline",
+      ...(tsconfigRaw && { tsconfigRaw }),
     });
 
     return {

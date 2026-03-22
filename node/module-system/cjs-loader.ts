@@ -35,6 +35,30 @@ export class CJSLoader {
     private fileSource?: FileSource,
   ) {}
 
+  /**
+   * Find the nearest tsconfig.json for the given file path.
+   * Walks up from the file's directory, checking syncCache at each level.
+   * Returns the raw JSON string, or undefined if not found.
+   * Skips tsconfigs inside node_modules to avoid using package-level configs.
+   */
+  private findTsconfig(filePath: string): string | undefined {
+    if (!this.syncCache) return undefined;
+    // Don't apply project tsconfig to node_modules files
+    if (filePath.includes("/node_modules/")) return undefined;
+    let dir = PathUtils.dirname(filePath);
+    for (let i = 0; i < 10 && dir && dir !== "/"; i++) {
+      const candidate = PathUtils.join(dir, "tsconfig.json");
+      const cached = this.syncCache.get(candidate);
+      if (cached != null) {
+        return typeof cached === "string"
+          ? cached
+          : new TextDecoder().decode(cached as Uint8Array);
+      }
+      dir = PathUtils.dirname(dir);
+    }
+    return undefined;
+  }
+
   /** Create require function for a given caller path. */
   createRequire(callerPath: string) {
     const requireAsync = (id: string): unknown | Promise<unknown> => {
@@ -147,6 +171,8 @@ export class CJSLoader {
     let code: string;
     let isEsmBundle = false;
 
+    const tsconfigRaw = this.findTsconfig(resolved);
+
     if (format === "esm") {
       const fsMod = (this.builtins.get("node:fs") ??
         this.builtins.get("fs")) as Record<string, unknown> | undefined;
@@ -161,7 +187,7 @@ export class CJSLoader {
       if (pathMod) (globalThis as Record<string, unknown>).path = pathMod;
       (globalThis as Record<string, unknown>).process = this.process;
       try {
-        code = await esmToCjs(content, resolved);
+        code = await esmToCjs(content, resolved, tsconfigRaw);
       } catch (e) {
         if (/Top-level await.*"cjs"/.test(String(e))) {
           // ESM has top-level await — bundle as ESM and run via import()
@@ -178,7 +204,7 @@ export class CJSLoader {
         }
       }
     } else {
-      const result = await this.transform.transform(content, resolved, "cjs");
+      const result = await this.transform.transform(content, resolved, "cjs", tsconfigRaw);
       code = result.code;
     }
 

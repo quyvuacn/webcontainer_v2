@@ -92,6 +92,7 @@ const _TLA_ERROR =
 export async function esmToCjs(
   code: string,
   filePath: string,
+  tsconfigRaw?: string,
 ): Promise<string> {
   await ensureInit();
 
@@ -102,8 +103,9 @@ export async function esmToCjs(
     const result = await esbuild.transform(code, {
       loader,
       format: "cjs",
-      target: "es2022",
+      target: "esnext",
       sourcefile,
+      ...(tsconfigRaw && { tsconfigRaw }),
     });
     return result.code;
   } catch (e) {
@@ -281,7 +283,11 @@ export async function esmBundleForTLA(
     entryPoints: [normalizedEntry],
     bundle: true,
     format: "esm",
-    target: "es2022",
+    // Use esnext target so esbuild does not attempt to downcompile modern syntax
+    // (e.g. 'using' declarations, import attributes) that its WASM version may
+    // mis-parse when transforming for an older target. The bundled output always
+    // runs in the same browser session which supports modern JS natively.
+    target: "esnext",
     platform: "browser",
     write: false,
     plugins: [plugin],
