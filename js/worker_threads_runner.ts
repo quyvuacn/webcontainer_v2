@@ -136,13 +136,19 @@ function setupTcpRegHook(tcpRegPort: MessagePort) {
       res.end = function (body?: string | Uint8Array) {
         origEnd(body)
         const h = Object.entries(res.getHeaders()) as [string, string][]
-        const b = typeof body === 'string' ? [...new TextEncoder().encode(body)] : (body ? [...new Uint8Array(body)] : [])
+        const writtenChunks: Uint8Array[] = (res as ServerResponse & { _writeBuffer?: Uint8Array[] })._writeBuffer ?? []
+        const finalBytes = body instanceof Uint8Array ? body : body ? new TextEncoder().encode(body) : new Uint8Array(0)
+        const allChunks = [...writtenChunks, finalBytes]
+        const totalLen = allChunks.reduce((s, c) => s + c.length, 0)
+        const combined = new Uint8Array(totalLen)
+        let off = 0
+        for (const c of allChunks) { combined.set(c, off); off += c.length }
         port1.postMessage({
           type: 'virtual_tcp_response',
           requestId: data.requestId,
           status: (res as { statusCode?: number }).statusCode ?? 200,
           headers: h,
-          body: b,
+          body: [...combined],
         })
       } as typeof res.end
       queueMicrotask(() => {
