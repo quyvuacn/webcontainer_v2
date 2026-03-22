@@ -5,7 +5,7 @@ import { initOpfsBridge, opfsWrite, opfsDelete, opfsListAll, createBroadcastChan
 import { VFS_PREFIX } from './config'
 import { createCdnVfsProxy } from './cdn/vfs_proxy'
 
-let vfs: { read: (p: string) => Uint8Array | null; write: (p: string, c: Uint8Array | string) => void; acquireLock?: (p: string) => number; releaseLock?: (id: number) => void; delete?: (p: string) => boolean; invalidate?: (p: string) => void; preload?: (p: string, c: Uint8Array) => void } | null = null
+let vfs: { read: (p: string) => Uint8Array | null; write: (p: string, c: Uint8Array | string) => void; exists: (p: string) => boolean; acquireLock: (p: string) => number; releaseLock: (id: number) => void; delete?: (p: string) => boolean; invalidate?: (p: string) => void; preload?: (p: string, c: Uint8Array) => void } | null = null
 const portHandlers = new Map<number, (req: unknown, res: unknown) => void>()
 // SAB per port — persists across SW restarts so reRegisterPorts can resend buffer
 const portSabs = new Map<number, SharedArrayBuffer>()

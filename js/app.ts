@@ -19,7 +19,7 @@ const termOpts = {
 }
 
 let termCount = 0
-type RamVfs = { read: (p: string) => Uint8Array | null; write: (p: string, b: Uint8Array | string) => void; exists: (p: string) => boolean; readdir?: (p: string) => string[]; stat?: (p: string) => { isFile: () => boolean; isDirectory: () => boolean } | null; mkdir?: (p: string) => void; dirs?: Set<string>; files?: Map<string, unknown>; acquireLock: (p: string) => number; releaseLock: (id: number) => void }
+type RamVfs = { read: (p: string) => Uint8Array | null; write: (p: string, b: Uint8Array | string) => void; exists: (p: string) => boolean; readdir?: (p: string) => string[]; stat?: (p: string) => { isFile: () => boolean; isDirectory: () => boolean } | null; mkdir?: (p: string) => void; dirs?: Set<string>; files?: Map<string, { content: Uint8Array; mtime?: number; mode?: number }>; acquireLock: (p: string) => number; releaseLock: (id: number) => void }
 let vfs: RamVfs | null = null
 let createServerFn: ((handler: (req: unknown, res: unknown) => void) => { listen: (port: number) => void }) | null = null
 
@@ -47,7 +47,7 @@ function createShellState(vfs: RamVfs, term: Terminal) {
   const workerRefSlot: WorkerRefSlot = { current: null }
   const spawnNode = createNodeRunner(vfs, terminal, workerRefSlot)
   const spawnSyncAsync = createSpawnSyncAsync(vfs)
-  const shell = new Shell(shellVfs, toTerm, {
+  const shell = new Shell(shellVfs as Shell['vfs'], toTerm, {
     cwd: 'project',
     user: 'user',
     spawnNode,
@@ -399,12 +399,21 @@ async function init() {
     reloadBtn.onclick = loadPreview
     loadPreview()
     window.addEventListener('port-registered', (e: Event) => {
-      const port = (e as CustomEvent).detail?.port
-      if (port?.toString() === portSelect.value) loadPreview()
+      const port = (e as CustomEvent).detail?.port?.toString()
+      if (!port) return
+      if (!Array.from(portSelect.options).some(o => o.value === port)) {
+        const opt = document.createElement('option')
+        opt.value = port
+        opt.textContent = `:${port}`
+        portSelect.appendChild(opt)
+      }
+      portSelect.value = port
+      urlInput.value = '/'
+      loadPreview()
     })
     window.addEventListener('message', (e: MessageEvent<{ type?: string; cmd?: string }>) => {
       if (e.data?.type === 'run-preview-cmd' && e.data?.cmd && terminals[activeIdx]) {
-        terminals[activeIdx].state.shell.execute(e.data.cmd)
+        terminals[activeIdx].shell.execute(e.data.cmd)
       }
     })
     wrapperEl.addEventListener('click', () => {
