@@ -105,24 +105,23 @@ self.addEventListener('fetch', event => {
   const portMatch = url.pathname.match(/^\/__port__\/(\d+)(\/.*|$)/)
   if (portMatch) {
     const port = parseInt(portMatch[1])
-    const hasPort = registeredPorts.has(port)
-    const portList = [...registeredPorts]
-    if (hasPort) {
-      event.respondWith((async () => {
-        const client = mainClients.values().next().value ?? (await self.clients.matchAll())[0]
-        if (!client) return new Response('No main client. Open / first.', { status: 503 })
-        return forwardToMain(event.request, port, client)
-      })())
-      return
-    }
-    const errMsg = `Port ${port} not registered. Registered: [${portList.join(',') || 'none'}]. Run your server in the terminal first.`
-    if (event.request.destination === 'document') {
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:20px;font-family:monospace;color:#8b949e;background:#0d1117"><pre>${errMsg}</pre></body></html>`
-      const h = { 'Content-Type': 'text/html;charset=utf-8', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' }
-      event.respondWith(new Response(html, { status: 200, headers: h }))
-    } else {
-      event.respondWith(new Response(errMsg, { status: 503 }))
-    }
+    event.respondWith((async () => {
+      // Always try to find a live client — registeredPorts may be empty after SW restart
+      let client = mainClients.values().next().value
+      if (!client) {
+        const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: false })
+        client = all[0]
+      }
+      if (!client) {
+        const msg = `Port ${port}: no active app client. Open the app page first.`
+        if (event.request.destination === 'document') {
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:20px;font-family:monospace;color:#8b949e;background:#0d1117"><pre>${msg}</pre></body></html>`
+          return new Response(html, { status: 503, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' } })
+        }
+        return new Response(msg, { status: 503 })
+      }
+      return forwardToMain(event.request, port, client)
+    })())
     return
   }
 

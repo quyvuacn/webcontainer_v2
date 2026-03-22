@@ -55,7 +55,7 @@ export function createNodeRunner(
             p.then(({ status, headers: h, body: b }) => {
               h.forEach(([k, v]) => res.setHeader(k, v))
               ;(res as { statusCode?: number }).statusCode = status
-              res.end(b.length ? new TextDecoder().decode(new Uint8Array(b)) : '')
+              res.end(b.length ? new Uint8Array(b) : '')
             })
           }
           if (req.on) {
@@ -107,7 +107,7 @@ export function createNodeRunner(
                   const rid = crypto.randomUUID()
                   const pr = new Promise<{ status: number; headers: [string, string][]; body: number[] }>((resolve) => { pending.set(rid, resolve) })
                   reqPort.postMessage({ type: 'virtual_tcp_request', requestId: rid, method: req.method ?? 'GET', url: fwdUrl, headers, body })
-                  pr.then(({ status, headers: h, body: b }) => { h.forEach(([k, v]) => res.setHeader(k, v)); (res as { statusCode?: number }).statusCode = status; res.end(b.length ? new TextDecoder().decode(new Uint8Array(b)) : '') })
+                  pr.then(({ status, headers: h, body: b }) => { h.forEach(([k, v]) => res.setHeader(k, v)); (res as { statusCode?: number }).statusCode = status; res.end(b.length ? new Uint8Array(b) : '') })
                 }
                 if (req.on) { req.on('data', (chunk: Uint8Array) => { body.push(...chunk) }); req.on('end', collect) } else collect()
               })
