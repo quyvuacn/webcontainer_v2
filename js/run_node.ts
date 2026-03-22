@@ -2,6 +2,7 @@ import { runNode } from '../node/cli'
 import { createVirtualFSAdapter } from '../node/vfs/core/adapter'
 import { registerWorkerVfsPort, setupVirtualPort, teardownVirtualPort, registerSyncVfsChannel } from './main'
 import { createSyncVfsSab } from './lib/sync_vfs_channel'
+import { VFS_PREFIX } from './config'
 
 export type WorkerRefSlot = {
   current: { worker: Worker; resolve: (code: number) => void; children: Worker[] } | null
@@ -170,6 +171,7 @@ export function createNodeRunner(
             cwd: data.cwd ?? opts.cwd ?? 'project',
             env: data.env ?? opts.env ?? {},
             wasmBytes: wcopy,
+            vfsPrefix: VFS_PREFIX,
           }, t)
           return
         }
@@ -204,6 +206,7 @@ export function createNodeRunner(
         cwd: opts.cwd ?? 'project',
         env: opts.env ?? {},
         wasmBytes: wasmCopy,
+        vfsPrefix: VFS_PREFIX,
       }, transfer)
     })
   }

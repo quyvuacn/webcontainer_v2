@@ -8,7 +8,10 @@
       "Bash(npm install:*)",
       "Bash(taskkill //F //IM node.exe)",
       "Bash(netstat -ano)",
-      "Bash(xargs -I{} taskkill //PID {} //F)"
+      "Bash(xargs -I{} taskkill //PID {} //F)",
+      "Bash(npx tsc:*)",
+      "Bash(npx --yes tsc --noEmit)",
+      "Bash(./node_modules/.bin/tsc --noEmit)"
     ]
   }
 }

@@ -24,6 +24,11 @@ export async function npmCi(vfsRead: (p: string) => Uint8Array | null, vfsWrite:
   const pkgJsonResults = await Promise.allSettled(
     Object.entries(lock.packages).map(async ([path, entry]) => {
       const name = path.replace('node_modules/', '')
+      if (name.startsWith('@types/')) {
+        const stub = JSON.stringify({ name, version: entry.version, types: 'index.d.ts' })
+        vfsWrite(`${pkgPath}/${path}/package.json`, new TextEncoder().encode(stub))
+        return
+      }
       const r = await fetch(`${CDN_BASE}/${name}@${entry.version}/package.json`)
       if (!r.ok) throw new Error(`CDN: ${name}@${entry.version} package.json not found`)
       const realPkgJson = await r.arrayBuffer()

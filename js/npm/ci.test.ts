@@ -1,7 +1,16 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { npmCi } from './ci'
 
 describe('npmCi', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      const fakePkg = (name: string, version: string) => ({ name, version, main: 'index.js' })
+      if (url.includes('/pkg@')) return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new TextEncoder().encode(JSON.stringify(fakePkg('pkg', '1.0.0'))).buffer) })
+      return Promise.resolve({ ok: false })
+    }))
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
   it('throws when no lockfile', async () => {
     const vfsRead = vi.fn(() => null)
     await expect(npmCi(vfsRead, vi.fn(), vi.fn(), vi.fn())).rejects.toThrow('Missing package-lock.json')

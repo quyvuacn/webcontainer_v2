@@ -282,6 +282,18 @@ export class CJSLoader {
           let dir = PathUtils.dirname(resolved)
           let projectPkgJson: string | undefined
           for (let i = 0; i < 10 && dir && dir !== '/'; i++) {
+            // Skip subdirectories inside a node_modules package (e.g. vite/bin, vite/dist/node).
+            // Only read package.json at the package root (node_modules/<pkg>) and above.
+            const nmIdx = dir.lastIndexOf('/node_modules/')
+            if (nmIdx >= 0) {
+              const afterNm = dir.slice(nmIdx + '/node_modules/'.length)
+              const parts = afterNm.split('/')
+              const pkgDepth = parts[0]?.startsWith('@') ? 2 : 1
+              if (parts.length > pkgDepth) {
+                dir = PathUtils.dirname(dir)
+                continue
+              }
+            }
             const pkgJson = PathUtils.join(dir, 'package.json')
             if (!this.syncCache.has(pkgJson)) {
               try {

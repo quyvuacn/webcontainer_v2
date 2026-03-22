@@ -107,6 +107,8 @@ export class ModuleResolver {
   }
 
   private async tryResolvePackageSubpath(pkgPath: string, subpath: string): Promise<string | null> {
+    // Only check package.json at actual package roots — not inside subdirs like vite/bin/
+    if (!this.isPackageRoot(pkgPath)) return null
     const pkgJsonPath = PathUtils.join(pkgPath, 'package.json')
     if (!(await this.vfs.exists(pkgJsonPath))) return null
     const raw = await this.vfs.readFile(pkgJsonPath, 'utf8')
@@ -133,20 +135,35 @@ export class ModuleResolver {
     const exact = await this.tryExtensions(path)
     if (exact) return exact
 
-    // Directory with index
+    // Package directory — check package.json FIRST (Node.js resolution order).
+    // Only do this at actual package roots (directly under node_modules) to avoid
+    // spurious CDN fetches for subdirectories like vite/bin/, vite/dist/node/, etc.
+    if (this.isPackageRoot(path)) {
+      const pkgPath = PathUtils.join(path, 'package.json')
+      if (await this.vfs.exists(pkgPath)) {
+        return this.resolvePackage(path)
+      }
+    }
+
+    // Fallback: bare directory with no package.json — try index files
     for (const idx of INDEX_FILES) {
       const full = PathUtils.join(path, idx)
       const exists = await this.vfs.exists(full)
       if (exists) return PathUtils.normalize(full)
     }
 
-    // Package directory — resolve package entry
-    const pkgPath = PathUtils.join(path, 'package.json')
-    if (await this.vfs.exists(pkgPath)) {
-      return this.resolvePackage(path)
-    }
-
     return null
+  }
+
+  /** True when path is directly under a node_modules dir (i.e. a package root). */
+  private isPackageRoot(path: string): boolean {
+    const norm = PathUtils.normalize(path)
+    const parent = PathUtils.dirname(norm)
+    const parentBase = PathUtils.basename(parent)
+    if (parentBase === 'node_modules') return true
+    // Scoped: node_modules/@scope/pkg
+    const grandparent = PathUtils.dirname(parent)
+    return PathUtils.basename(grandparent) === 'node_modules' && parentBase.startsWith('@')
   }
 
   private async resolveFile(path: string): Promise<string> {

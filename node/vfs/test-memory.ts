@@ -32,6 +32,10 @@ export function createMemoryVfs() {
       const parts = p.split('/').filter(Boolean)
       for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join('/'))
     },
+    delete(p: string) {
+      files.delete(p)
+      dirs.delete(p)
+    },
     dirs,
     files,
   }

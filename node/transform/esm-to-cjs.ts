@@ -15,7 +15,7 @@ import type { FileSource } from '../file-source/types'
 let initialized = false
 
 export const ESBUILD_WASM_LOCAL = '/esbuild.wasm'
-const _cdnBase = (typeof import.meta !== 'undefined' && (import.meta as { env?: { VITE_CDN_BASE?: string } }).env?.VITE_CDN_BASE) || 'http://localhost:4873'
+const _cdnBase = (typeof import.meta !== 'undefined' && (import.meta as { env?: { VITE_CDN_BASE?: string } }).env?.VITE_CDN_BASE) || '/pkg'
 export const ESBUILD_WASM_CDN = `${_cdnBase}/esbuild-wasm@0.27.4/esbuild.wasm`
 
 /** Preload esbuild.wasm. Prefer local (faster, no network). Fallback to CDN.

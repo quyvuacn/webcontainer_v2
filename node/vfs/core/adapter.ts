@@ -4,6 +4,8 @@ export interface VirtualFS {
   readFile(path: string, encoding?: string): Promise<string | Uint8Array>
   writeFile(path: string, content: string | Uint8Array): Promise<void>
   mkdir(path: string, opts?: { recursive?: boolean }): Promise<void>
+  unlink(path: string): Promise<void>
+  rmdir(path: string, opts?: { recursive?: boolean }): Promise<void>
   exists(path: string): Promise<boolean>
   stat(path: string): Promise<Stats>
   readdir(path: string): Promise<string[]>
@@ -30,6 +32,7 @@ function prefix(p: string): string {
 export function createVirtualFSAdapter(ramVfs: {
   read(path: string): Uint8Array | null
   write(path: string, content: Uint8Array): void
+  delete?(path: string): boolean | void
   readdir?(path: string): string[] | Promise<string[]>
   stat?(path: string): Stats | { isFile: () => boolean; isDirectory: () => boolean; mtime?: Date } | null
   exists(path: string): boolean
@@ -131,6 +134,43 @@ export function createVirtualFSAdapter(ramVfs: {
         for (let i = 1; i <= parts.length; i++) {
           dirs.add(parts.slice(0, i).join('/'))
         }
+      }
+    },
+
+    async unlink(path: string): Promise<void> {
+      const p = prefix(ensurePath(path))
+      if (ramVfs.delete) {
+        ramVfs.delete(p)
+      } else {
+        // Fallback: overwrite with empty to "delete" (best-effort)
+        const files = ramVfs.files as Map<string, unknown> | undefined
+        files?.delete(p)
+      }
+    },
+
+    async rmdir(path: string, opts?: { recursive?: boolean }): Promise<void> {
+      const p = prefix(ensurePath(path))
+      if (opts?.recursive && ramVfs.readdir) {
+        // Recursively delete via readdir walk
+        const deleteDir = async (dir: string): Promise<void> => {
+          let names: string[]
+          try { names = await Promise.resolve(ramVfs.readdir!(dir)) } catch { return }
+          for (const name of names) {
+            if (name === '.' || name === '..') continue
+            const child = dir + '/' + name
+            const st = ramVfs.stat?.(child)
+            if (st?.isDirectory()) await deleteDir(child)
+            else ramVfs.delete?.(child)
+          }
+          ramVfs.delete?.(dir)
+          const dirs = ramVfs.dirs as Set<string> | undefined
+          dirs?.delete(dir)
+        }
+        await deleteDir(p)
+      } else {
+        ramVfs.delete?.(p)
+        const dirs = ramVfs.dirs as Set<string> | undefined
+        dirs?.delete(p)
       }
     },
 

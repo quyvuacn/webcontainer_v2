@@ -36,6 +36,7 @@ type VfsPortMsg = {
   bytes?: number[]
   prefix?: string
   lockId?: number
+  recursive?: boolean
 }
 
 function handleVfsPort(port: MessagePort) {
@@ -106,6 +107,33 @@ function handleVfsPort(port: MessagePort) {
       }
       case 'mkdir': {
         v!.mkdir?.(path)
+        port.postMessage({ id: data.id })
+        break
+      }
+      case 'rmdir': {
+        // Recursive delete via raw VFS delete if rmdir not available
+        if (v!.readdir) {
+          const recursive = data.recursive ?? false
+          if (recursive) {
+            const deleteDir = async (dir: string): Promise<void> => {
+              let names: string[]
+              try { names = await Promise.resolve(v!.readdir!(dir)) } catch { return }
+              for (const name of names) {
+                if (name === '.' || name === '..') continue
+                const child = dir + '/' + name
+                const st = v!.stat?.(child)
+                if (st?.isDirectory()) await deleteDir(child)
+                else v!.delete?.(child)
+              }
+              v!.delete?.(dir)
+            }
+            await deleteDir(path)
+          } else {
+            v!.delete?.(path)
+          }
+        } else {
+          v!.delete?.(path)
+        }
         port.postMessage({ id: data.id })
         break
       }

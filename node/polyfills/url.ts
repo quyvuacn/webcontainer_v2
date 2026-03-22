@@ -28,9 +28,13 @@ export function createUrlPolyfill(options: UrlPolyfillOptions = {}) {
       if (u.protocol === 'wc-file:') {
         return decodeURIComponent(u.pathname.replace(/^\/([a-zA-Z]:)/, '$1'))
       }
-      // __wc__ URLs (Service Worker file serving)
+      // /__r__/ or /__wc__/ URLs (Service Worker file serving)
       if ((u.protocol === 'https:' || u.protocol === 'http:') && u.pathname.startsWith('/__wc__/')) {
         return decodeURIComponent(u.pathname.slice(8))
+      }
+      if ((u.protocol === 'https:' || u.protocol === 'http:') && u.pathname.match(/^\/__[^/]+__\//)) {
+        // Strip the VFS prefix (e.g. /__r__/ or /__a3f1__/) to get the VFS path
+        return decodeURIComponent(u.pathname.replace(/^\/__[^/]+__\//, '/'))
       }
       if (u.protocol !== 'file:') throw new Error(`Invalid URL protocol: ${u.protocol}`)
       return decodeURIComponent(u.pathname.replace(/^\/([a-zA-Z]:)/, '$1'))
@@ -38,10 +42,11 @@ export function createUrlPolyfill(options: UrlPolyfillOptions = {}) {
 
     pathToFileURL(path: string): URL {
       const normalized = path.replace(/\\/g, '/')
-      // In browser: return fetchable URL. SW asks main thread → reads from VFS (same path as writeFile).
-      if (typeof window !== 'undefined' && typeof location !== 'undefined') {
+      // In browser (main thread or Web Worker): return /__r__/ URL served by Service Worker from VFS.
+      if (typeof location !== 'undefined' && typeof location.origin === 'string') {
+        const vfsPrefix = (globalThis as Record<string, unknown>).__wcVfsPrefix as string | undefined ?? '__r__'
         const wcPath = resolvePath(getCwd(), normalized)
-        return new URL(location.origin + '/__wc__' + (wcPath.startsWith('/') ? wcPath : '/' + wcPath))
+        return new URL(location.origin + '/' + vfsPrefix + '/' + (wcPath.startsWith('/') ? wcPath.slice(1) : wcPath))
       }
       const prefix = normalized.startsWith('/') ? 'file://' : 'file:///'
       return new URL(prefix + encodeURI(normalized))

@@ -3,7 +3,10 @@ import { defineConfig } from 'vite'
 
 export default defineConfig(() => {
   const vfsPrefix = process.env.VITE_VFS_PREFIX || '__r__'
-  const cdnBase = process.env.VITE_CDN_BASE || 'http://localhost:4873'
+  // CDN_BASE: use same-origin /pkg proxy in dev so COEP/CORS never block requests.
+  // In production, set VITE_CDN_BASE to your deployed proxy URL.
+  const cdnBase = process.env.VITE_CDN_BASE || '/pkg'
+  const proxyTarget = process.env.PKG_PROXY_URL || 'http://localhost:4873'
   return {
     appType: 'mpa',
     define: {
@@ -17,6 +20,14 @@ export default defineConfig(() => {
       headers: {
         'Cross-Origin-Opener-Policy': 'same-origin',
         'Cross-Origin-Embedder-Policy': 'require-corp',
+      },
+      proxy: {
+        // Forward /pkg/* → proxy server (same-origin, no CORS/COEP issues)
+        '/pkg': {
+          target: proxyTarget,
+          rewrite: (path) => path.replace(/^\/pkg/, ''),
+          changeOrigin: true,
+        },
       },
     },
     publicDir: 'public',

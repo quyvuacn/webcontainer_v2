@@ -98,7 +98,8 @@ export async function handleSyncFsRequest(
 
   const op   = Atomics.load(ctrl, I_OP)
   const plen = Atomics.load(ctrl, I_PLEN)
-  const path = new TextDecoder().decode(new Uint8Array(sab, PATH_OFF, plen))
+  // Must copy out of SharedArrayBuffer before decoding — TextDecoder rejects SAB views
+  const path = new TextDecoder().decode(new Uint8Array(sab, PATH_OFF, plen).slice())
 
   try {
     if (op === OP_EXISTS) {

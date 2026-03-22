@@ -4,7 +4,7 @@ import { resolveAll } from './resolver'
 describe('resolveAll', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn((url: string) => {
-      const m = url.match(/registry\.npmjs\.org\/(.+)$/)
+      const m = url.match(/\/registry\/(.+)$/)
       if (!m) return Promise.reject(new Error('unknown'))
       const name = m[1]
       if (name === 'pkg-a') {

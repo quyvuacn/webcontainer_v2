@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { npmInstall } from './install'
 
 describe('npmInstall', () => {
@@ -9,6 +9,16 @@ describe('npmInstall', () => {
   let mockResolveAll: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      const fakePkg = (name: string, version: string) => ({
+        name, version, main: 'index.js',
+        exports: { '.': { require: './index.js' } }
+      })
+      if (url.includes('/foo@')) return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new TextEncoder().encode(JSON.stringify(fakePkg('foo', '2.0.0'))).buffer) })
+      if (url.includes('/bar@')) return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new TextEncoder().encode(JSON.stringify(fakePkg('bar', '1.0.0'))).buffer) })
+      if (url.includes('/x@')) return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new TextEncoder().encode(JSON.stringify(fakePkg('x', '1.0.0'))).buffer) })
+      return Promise.resolve({ ok: false })
+    }))
     mockResolveAll = vi.fn().mockResolvedValue({
       packages: {
         'node_modules/foo': { version: '2.0.0' },
@@ -25,6 +35,10 @@ describe('npmInstall', () => {
     vfsWrite = vi.fn()
     vfsAcquireLock = vi.fn(() => 1)
     vfsReleaseLock = vi.fn()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('throws when no package.json', async () => {

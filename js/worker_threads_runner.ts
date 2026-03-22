@@ -89,6 +89,12 @@ function createPortVfs(port: MessagePort, syncFsSab?: SharedArrayBuffer, syncFsP
     async mkdir(path: string, _opts?: { recursive?: boolean }): Promise<void> {
       await send('mkdir', { path: norm(path) })
     },
+    async unlink(path: string): Promise<void> {
+      await send('delete', { path: norm(path) })
+    },
+    async rmdir(path: string, opts?: { recursive?: boolean }): Promise<void> {
+      await send('rmdir', { path: norm(path), recursive: opts?.recursive ?? false })
+    },
     async exists(path: string): Promise<boolean> {
       const res = await send('exists', { path: norm(path) })
       return res.ok ?? false
@@ -253,8 +259,9 @@ self.onmessage = async ({ data }: MessageEvent<{ type: string; vfsPort?: Message
     return
   }
   if (data.type === 'init') {
-    const init = data as { vfsPort?: MessagePort; filename?: string; args?: string[]; workerData?: unknown; cwd?: string; env?: Record<string, string>; threadId?: number; wasmBytes?: ArrayBuffer; tcpRegPort?: MessagePort; syncFsSab?: SharedArrayBuffer; syncFsPort?: MessagePort }
-    const { vfsPort, filename, args, workerData, cwd = '/', env = {}, threadId = 0, wasmBytes, tcpRegPort, syncFsSab, syncFsPort } = init
+    const init = data as { vfsPort?: MessagePort; filename?: string; args?: string[]; workerData?: unknown; cwd?: string; env?: Record<string, string>; threadId?: number; wasmBytes?: ArrayBuffer; tcpRegPort?: MessagePort; syncFsSab?: SharedArrayBuffer; syncFsPort?: MessagePort; vfsPrefix?: string }
+    const { vfsPort, filename, args, workerData, cwd = '/', env = {}, threadId = 0, wasmBytes, tcpRegPort, syncFsSab, syncFsPort, vfsPrefix } = init
+    if (vfsPrefix) (globalThis as Record<string, unknown>).__wcVfsPrefix = vfsPrefix
     if (!vfsPort) {
       self.postMessage({ type: 'error', data: 'init requires vfsPort' })
       self.postMessage({ type: 'exit', data: 1 })

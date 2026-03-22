@@ -17,6 +17,12 @@ export async function npmInstall(vfsRead: (p: string) => Uint8Array | null, vfsW
   const pkgJsonResults = await Promise.allSettled(
     Object.entries(lock.packages).map(async ([path, entry]) => {
       const name = path.replace('node_modules/', '')
+      // @types/* packages are type-only — no runtime JS, no need for real package.json
+      if (name.startsWith('@types/')) {
+        const stub = JSON.stringify({ name, version: entry.version, types: 'index.d.ts' })
+        vfsWrite(`${pkgPath}/${path}/package.json`, new TextEncoder().encode(stub))
+        return
+      }
       const r = await fetch(`${CDN_BASE}/${name}@${entry.version}/package.json`)
       if (!r.ok) throw new Error(`CDN: ${name}@${entry.version} package.json not found`)
       const realPkgJson = await r.arrayBuffer()
