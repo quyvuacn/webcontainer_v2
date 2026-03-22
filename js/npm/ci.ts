@@ -1,5 +1,5 @@
 import { parseRange, satisfies } from './semver'
-import { fetchEntryFromCdn } from '../cdn/resolver'
+import { CDN_BASE } from '../cdn/config'
 
 export async function npmCi(vfsRead: (p: string) => Uint8Array | null, vfsWrite: (p: string, b: Uint8Array) => void, vfsAcquireLock: (p: string) => number, vfsReleaseLock: (id: number) => void, pkgPath = 'project', opts: { prefetch?: boolean } = {}) {
   const lockBytes = vfsRead(`${pkgPath}/package-lock.json`)
@@ -20,23 +20,18 @@ export async function npmCi(vfsRead: (p: string) => Uint8Array | null, vfsWrite:
   }
 
   const lockId = vfsAcquireLock(`${pkgPath}/node_modules`)
-  for (const [path, entry] of Object.entries(lock.packages)) {
-    const pkgName = path.replace('node_modules/', '')
-    const stub = JSON.stringify({ name: pkgName, version: entry.version, main: 'index.js' })
-    vfsWrite(`${pkgPath}/${path}/package.json`, new TextEncoder().encode(stub))
-  }
 
-  if (opts.prefetch !== false) {
-    const prefetchResults = await Promise.allSettled(
-      Object.entries(lock.packages).map(async ([path, entry]) => {
-        const name = path.replace('node_modules/', '')
-        const { entry: entryPath, bytes } = await fetchEntryFromCdn(name, entry.version)
-        vfsWrite(`${pkgPath}/${path}/${entryPath}`, bytes)
-      })
-    )
-    const failed = prefetchResults.filter((r) => r.status === 'rejected').length
-    if (failed) console.warn(`npm: prefetch failed for ${failed} package(s)`)
-  }
+  const pkgJsonResults = await Promise.allSettled(
+    Object.entries(lock.packages).map(async ([path, entry]) => {
+      const name = path.replace('node_modules/', '')
+      const r = await fetch(`${CDN_BASE}/${name}@${entry.version}/package.json`)
+      if (!r.ok) throw new Error(`CDN: ${name}@${entry.version} package.json not found`)
+      const realPkgJson = await r.arrayBuffer()
+      vfsWrite(`${pkgPath}/${path}/package.json`, new Uint8Array(realPkgJson))
+    })
+  )
+  const failed = pkgJsonResults.filter((r) => r.status === 'rejected').length
+  if (failed) console.warn(`npm: failed to fetch package.json for ${failed} package(s)`)
 
   vfsReleaseLock(lockId)
   return { added: Object.keys(lock.packages).length }

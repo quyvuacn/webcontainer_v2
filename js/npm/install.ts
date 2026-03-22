@@ -1,5 +1,5 @@
 import { resolveAll as defaultResolveAll } from './resolver'
-import { fetchEntryFromCdn } from '../cdn/resolver'
+import { CDN_BASE } from '../cdn/config'
 
 export async function npmInstall(vfsRead: (p: string) => Uint8Array | null, vfsWrite: (p: string, b: Uint8Array) => void, vfsAcquireLock: (p: string) => number, vfsReleaseLock: (id: number) => void, pkgPath = 'project', resolveAll = defaultResolveAll, opts: { prefetch?: boolean } = {}) {
   const pkgJsonBytes = vfsRead(`${pkgPath}/package.json`)
@@ -11,29 +11,20 @@ export async function npmInstall(vfsRead: (p: string) => Uint8Array | null, vfsW
   const lock = await resolveAll(deps)
   const lockId = vfsAcquireLock(`${pkgPath}/node_modules`)
 
-  // Write placeholder stubs first so the lock is consistent before prefetch
-  for (const [path, entry] of Object.entries(lock.packages)) {
-    const name = path.replace('node_modules/', '')
-    const stub = JSON.stringify({ name, version: entry.version, main: 'index.js' })
-    vfsWrite(`${pkgPath}/${path}/package.json`, new TextEncoder().encode(stub))
-  }
-
-  if (opts.prefetch !== false) {
-    const prefetchResults = await Promise.allSettled(
-      Object.entries(lock.packages).map(async ([path, entry]) => {
-        const name = path.replace('node_modules/', '')
-        // Skip type-only packages — they have no runtime JS to fetch
-        if (name.startsWith('@types/')) return
-        const { entry: entryPath, bytes } = await fetchEntryFromCdn(name, entry.version)
-        vfsWrite(`${pkgPath}/${path}/${entryPath}`, bytes)
-        // Update stub so main points to the actual fetched entry path
-        const stub = JSON.stringify({ name, version: entry.version, main: entryPath })
-        vfsWrite(`${pkgPath}/${path}/package.json`, new TextEncoder().encode(stub))
-      })
-    )
-    const failed = prefetchResults.filter((r) => r.status === 'rejected').length
-    if (failed) console.warn(`npm: prefetch failed for ${failed} package(s)`)
-  }
+  // Fetch real package.json for each package from CDN (not a stub).
+  // This ensures the correct `main`, `exports`, `bin` fields are available
+  // before any code tries to resolve entry points.
+  const pkgJsonResults = await Promise.allSettled(
+    Object.entries(lock.packages).map(async ([path, entry]) => {
+      const name = path.replace('node_modules/', '')
+      const r = await fetch(`${CDN_BASE}/${name}@${entry.version}/package.json`)
+      if (!r.ok) throw new Error(`CDN: ${name}@${entry.version} package.json not found`)
+      const realPkgJson = await r.arrayBuffer()
+      vfsWrite(`${pkgPath}/${path}/package.json`, new Uint8Array(realPkgJson))
+    })
+  )
+  const failed = pkgJsonResults.filter((r) => r.status === 'rejected').length
+  if (failed) console.warn(`npm: failed to fetch package.json for ${failed} package(s)`)
 
   vfsReleaseLock(lockId)
   vfsWrite(`${pkgPath}/package-lock.json`, new TextEncoder().encode(JSON.stringify(lock, null, 2)))

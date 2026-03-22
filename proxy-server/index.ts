@@ -19,7 +19,6 @@ import https from 'node:https'
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
-import { pipeline } from 'node:stream/promises'
 import { extract as tarExtract } from 'tar-stream'
 
 const PORT = Number(process.env.PORT ?? 4873)

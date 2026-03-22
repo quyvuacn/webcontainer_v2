@@ -43,40 +43,39 @@ async function resolveBin(
   vfsRead: (p: string) => Uint8Array | null,
   vfsWrite?: (p: string, b: Uint8Array) => void,
 ): Promise<string | null> {
-  const stubBytes = vfsRead(`${pkgPath}/node_modules/${cmd}/package.json`)
-  if (!stubBytes) return null
+  const pkgJsonBytes = vfsRead(`${pkgPath}/node_modules/${cmd}/package.json`)
+  if (!pkgJsonBytes) return null
 
-  const stub = JSON.parse(new TextDecoder().decode(stubBytes))
-  const version = stub.version
+  let realPkg: { version?: string; bin?: string | Record<string, string> }
+  try {
+    realPkg = JSON.parse(new TextDecoder().decode(pkgJsonBytes))
+  } catch { return null }
+
+  const version = realPkg.version
   if (!version) return null
 
-  try {
-    const r = await fetch(`${CDN_BASE}/${cmd}@${version}/package.json`)
-    if (!r.ok) return null
-    const realPkg = await r.json()
+  let binRelPath: string | null = null
+  if (typeof realPkg.bin === 'string') {
+    binRelPath = realPkg.bin
+  } else if (realPkg.bin && typeof realPkg.bin === 'object') {
+    binRelPath = (realPkg.bin[cmd] ?? Object.values(realPkg.bin)[0]) as string | null
+  }
+  if (!binRelPath) return null
 
-    let binRelPath: string | null = null
-    if (typeof realPkg.bin === 'string') {
-      binRelPath = realPkg.bin
-    } else if (realPkg.bin && typeof realPkg.bin === 'object') {
-      binRelPath = (realPkg.bin[cmd] ?? Object.values(realPkg.bin)[0]) as string | null
-    }
-    if (!binRelPath) return null
+  const normalized = binRelPath.startsWith('./') ? binRelPath.slice(2) : binRelPath
+  const vfsFilePath = `${pkgPath}/node_modules/${cmd}/${normalized}`
 
-    const normalized = binRelPath.startsWith('./') ? binRelPath.slice(2) : binRelPath
-    const vfsFilePath = `${pkgPath}/node_modules/${cmd}/${normalized}`
-
-    if (!vfsRead(vfsFilePath) && vfsWrite) {
+  // Bin file will be lazy-fetched by the VFS layer on first access.
+  // Pre-fetch here only if vfsWrite is provided (avoids shebang in bin scripts).
+  if (!vfsRead(vfsFilePath) && vfsWrite) {
+    try {
       const fileRes = await fetch(`${CDN_BASE}/${cmd}@${version}/${normalized}`)
       if (!fileRes.ok) return null
       let content = await fileRes.text()
-      // Strip shebang
       if (content.startsWith('#!')) content = content.slice(content.indexOf('\n') + 1)
       vfsWrite(vfsFilePath, new TextEncoder().encode(content))
-    }
-
-    return vfsFilePath
-  } catch {
-    return null
+    } catch { return null }
   }
+
+  return vfsFilePath
 }
