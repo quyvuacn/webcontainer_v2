@@ -1,6 +1,7 @@
 const mainClients = new Map()
 const pendingVfs = new Map()
 const portBuffers = new Map()
+const portQueues = new Map()
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -51,6 +52,7 @@ self.addEventListener('message', ({ data, source }) => {
   }
   if (data.type === 'register_port') {
     portBuffers.set(data.port, data.buffer)
+    if (data.ackPort) { data.ackPort.postMessage('ok'); data.ackPort.close() }
   }
   if (data.type === 'vfs_response') {
     const resolve = pendingVfs.get(data.requestId)
@@ -69,16 +71,6 @@ self.addEventListener('fetch', event => {
     return
   }
 
-  if (event.request.destination === 'document') {
-    event.respondWith(injectIsolationHeaders(event.request))
-    return
-  }
-
-  if (url.pathname.startsWith('/__r__/')) {
-    event.respondWith(serveVfsFile(url.pathname.replace(/^\/__r__\/?/, ''), event.clientId))
-    return
-  }
-
   const portMatch = url.pathname.match(/^\/__port__\/(\d+)(\/.*|$)/)
   if (portMatch) {
     const port = parseInt(portMatch[1])
@@ -87,6 +79,19 @@ self.addEventListener('fetch', event => {
       event.respondWith(handleVirtualTcp(event.request, buf))
       return
     }
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Port :${port}</title></head><body style="margin:0;padding:16px;font-family:system-ui;background:#0d1117;color:#c9d1d9"><h2>Port :${port} chưa sẵn sàng</h2><p>Chạy <code style="background:#21262d;padding:2px 6px">node server.js</code> trong terminal.</p><button id="btn" style="margin-top:12px;padding:8px 16px;background:#238636;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px">Chạy server</button><script>document.getElementById("btn").onclick=()=>{if(window.parent!==window)window.parent.postMessage({type:"run-preview-cmd",cmd:"node server.js"},"*")}</script></body></html>`
+    event.respondWith(new Response(html, { status: 503, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' } }))
+    return
+  }
+
+  if (event.request.destination === 'document') {
+    event.respondWith(injectIsolationHeaders(event.request))
+    return
+  }
+
+  if (url.pathname.startsWith('/__r__/')) {
+    event.respondWith(serveVfsFile(url.pathname.replace(/^\/__r__\/?/, ''), event.clientId))
+    return
   }
 
   event.respondWith(fetch(event.request))
@@ -127,23 +132,34 @@ async function handleVirtualTcp(request, buf) {
     return new Response(null, { status: 101, webSocket: client })
   }
 
-  const ctrl = new Int32Array(buf)
-  const data = new Uint8Array(buf)
-  const DATA_OFF = 12
+  // Serialize requests per-buffer so concurrent fetches don't corrupt the SAB
+  const prev = portQueues.get(buf) || Promise.resolve()
+  let release
+  const gate = new Promise(r => release = r)
+  portQueues.set(buf, prev.then(() => gate))
+  await prev
 
-  const reqBytes = await serializeRequest(request)
-  data.set(reqBytes, DATA_OFF)
-  Atomics.store(ctrl, 1, reqBytes.length)
-  Atomics.store(ctrl, 0, 1)
-  Atomics.notify(ctrl, 0)
+  try {
+    const ctrl = new Int32Array(buf)
+    const data = new Uint8Array(buf)
+    const DATA_OFF = 12
 
-  const result = Atomics.waitAsync(ctrl, 0, 1)
-  await (result.value ?? Promise.resolve())
+    const reqBytes = await serializeRequest(request)
+    data.set(reqBytes, DATA_OFF)
+    Atomics.store(ctrl, 1, reqBytes.length)
+    Atomics.store(ctrl, 0, 1)
+    Atomics.notify(ctrl, 0)
 
-  const respLen = Atomics.load(ctrl, 2)
-  const respBytes = data.slice(DATA_OFF + reqBytes.length, DATA_OFF + reqBytes.length + respLen)
-  Atomics.store(ctrl, 0, 0)
-  return deserializeResponse(respBytes)
+    const result = Atomics.waitAsync(ctrl, 0, 1)
+    await (result.value ?? Promise.resolve())
+
+    const respLen = Atomics.load(ctrl, 2)
+    const respBytes = data.slice(DATA_OFF + reqBytes.length, DATA_OFF + reqBytes.length + respLen)
+    Atomics.store(ctrl, 0, 0)
+    return deserializeResponse(respBytes)
+  } finally {
+    release()
+  }
 }
 
 function bridgeWebSocket(ws, buf) {

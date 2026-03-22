@@ -251,6 +251,7 @@ async function init() {
       vfs.write('project/package.json', JSON.stringify({ name: 'demo', dependencies: { lodash: '^4.17.21' } }))
       vfs.write('project/hello.js', 'console.log("Hello!"); process.argv.forEach((a,i)=>console.log(i,a))')
       vfs.write('project/index.html', '<html><body><h1>Browser Node</h1><p>F5 restores</p></body></html>')
+      vfs.write('project/server.js', 'const http=require("http");const PORT=5173;http.createServer((req,res)=>{res.writeHead(200,{"Content-Type":"text/html"});res.end("<h1>OK</h1>")}).listen(PORT,()=>console.log("Server :"+PORT))')
     }
 
     wrapperEl.removeChild(tempDiv)
@@ -397,7 +398,15 @@ async function init() {
     }
     reloadBtn.onclick = loadPreview
     loadPreview()
-
+    window.addEventListener('port-registered', (e: Event) => {
+      const port = (e as CustomEvent).detail?.port
+      if (port?.toString() === portSelect.value) loadPreview()
+    })
+    window.addEventListener('message', (e: MessageEvent<{ type?: string; cmd?: string }>) => {
+      if (e.data?.type === 'run-preview-cmd' && e.data?.cmd && terminals[activeIdx]) {
+        terminals[activeIdx].state.shell.execute(e.data.cmd)
+      }
+    })
     wrapperEl.addEventListener('click', () => {
       if (terminals[activeIdx]) terminals[activeIdx].term.focus()
     })

@@ -7,7 +7,10 @@ import { createCdnVfsProxy } from './cdn/vfs_proxy'
 
 let vfs: { read: (p: string) => Uint8Array | null; write: (p: string, c: Uint8Array | string) => void; acquireLock?: (p: string) => number; releaseLock?: (id: number) => void; delete?: (p: string) => boolean; invalidate?: (p: string) => void; preload?: (p: string, c: Uint8Array) => void } | null = null
 const portHandlers = new Map<number, (req: unknown, res: unknown) => void>()
+// SAB per port — persists across SW restarts so reRegisterPorts can resend buffer
+const portSabs = new Map<number, SharedArrayBuffer>()
 let controllerchangeAttached = false
+const SAB_SIZE = 4 * 1024 * 1024
 
 function acquireTabLock(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -108,16 +111,101 @@ export function getVfsRead(path: string) {
 }
 
 function reRegisterPorts() {
-  for (const port of portHandlers.keys()) {
-    navigator.serviceWorker.controller?.postMessage({ type: 'register_port', port })
+  for (const [port, buf] of portSabs.entries()) {
+    navigator.serviceWorker.controller?.postMessage(
+      { type: 'register_port', port, buffer: buf }  // SAB is shared, not transferred
+    )
   }
 }
 
 export function setupVirtualPort(port: number, handler: (req: unknown, res: unknown) => void) {
+  // Idempotent: if already registered with a live SAB, just re-send to SW
+  if (portSabs.has(port)) {
+    portHandlers.set(port, handler)
+    const existing = portSabs.get(port)!
+    const { port1: ackIn, port2: ackOut } = new MessageChannel()
+    ackIn.onmessage = () => {
+      ackIn.close?.()
+      window.dispatchEvent(new CustomEvent('port-registered', { detail: { port } }))
+    }
+    navigator.serviceWorker.controller?.postMessage(
+      { type: 'register_port', port, buffer: existing, ackPort: ackOut },  // SAB shared
+      [ackOut]
+    )
+    return
+  }
+
   portHandlers.set(port, handler)
-  const post = () => navigator.serviceWorker.controller?.postMessage({ type: 'register_port', port })
-  if (navigator.serviceWorker.controller) post()
-  else navigator.serviceWorker.ready.then(post)
+
+  // Create two SABs: SW ↔ TCP Worker, TCP Worker ↔ Handler Worker
+  const swSab  = new SharedArrayBuffer(SAB_SIZE)
+  const handSab = new SharedArrayBuffer(SAB_SIZE)
+
+  // Store SW SAB so reRegisterPorts can resend after SW restart
+  portSabs.set(port, swSab)
+
+  // ── Spawn TCP Worker (spin loop, no async) ──────────────────────────────
+  const tcpWorker = new Worker('/js/tcp_worker.ts', { type: 'module' })
+  tcpWorker.postMessage({ sw_sab: swSab, hand_sab: handSab })
+
+  // ── Spawn Handler Worker (runs user code, handles requests) ────────────
+  const { port1, port2 } = new MessageChannel()
+  const handlerWorker = new Worker('/js/handler_worker.ts', { type: 'module' })
+  handlerWorker.postMessage({ hand_sab: handSab, mainPort: port2, port }, [port2])
+  handlerWorker.postMessage({ type: 'run' })
+
+  // Main Thread: deliver requests from Handler Worker → user handler → reply
+  port1.onmessage = ({ data: msg }: MessageEvent<{ type: string; port?: number; request?: unknown }>) => {
+    if (msg.type === 'handle_request') {
+      const cb = portHandlers.get(msg.port ?? port)
+      const req = msg.request as { method: string; url: string; headers: Record<string, string>; path: string }
+      try {
+        const u = new URL(req.url, 'http://localhost')
+        req.path = u.pathname.replace(/^\/__port__\/\d+/, '') || '/'
+      } catch {}
+      const res = {
+        statusCode: 200,
+        _headers: {} as Record<string, string>,
+        _done: false,
+        setHeader(k: string, v: string) { this._headers[k] = v },
+        end(body: string | Uint8Array = '') {
+          if (this._done) return
+          this._done = true
+          port1.postMessage({
+            type: 'handler_response',
+            response: {
+              status: this.statusCode,
+              headers: this._headers,
+              body: typeof body === 'string' ? body : new TextDecoder().decode(body),
+            },
+          })
+        },
+      }
+      try {
+        if (cb) cb(req, res)
+        else res.end('No handler')
+      } catch (e) {
+        res.statusCode = 500
+        res.end((e as Error)?.message ?? String(e))
+      }
+    }
+  }
+
+  // Register port with SW — send the SAB buffer, wait for ack before notifying UI
+  const sendToSw = () => {
+    const { port1: ackIn, port2: ackOut } = new MessageChannel()
+    ackIn.onmessage = () => {
+      ackIn.close?.()
+      window.dispatchEvent(new CustomEvent('port-registered', { detail: { port } }))
+    }
+    navigator.serviceWorker.controller?.postMessage(
+      { type: 'register_port', port, buffer: swSab, ackPort: ackOut },  // SAB shared
+      [ackOut]
+    )
+  }
+  if (navigator.serviceWorker.controller) sendToSw()
+  else navigator.serviceWorker.ready.then(sendToSw)
+
   if (!controllerchangeAttached) {
     controllerchangeAttached = true
     navigator.serviceWorker.addEventListener('controllerchange', reRegisterPorts)
@@ -137,8 +225,6 @@ export function createServer(handler: (req: unknown, res: unknown) => void) {
 }
 
 async function bootstrap() {
-  const registrations = await navigator.serviceWorker.getRegistrations()
-  for (const r of registrations) await r.unregister()
   const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
   await navigator.serviceWorker.ready
   if (reg.waiting) {
@@ -176,11 +262,11 @@ async function bootstrap() {
       console.warn('[bootstrap] WASM delete failed:', (e as Error)?.message ?? e)
       throw e
     }
-    vfs = ok ? wasm : new RamVfs(opfsWrite, opfsDelete)
+    vfs = ok ? wasm : new RamVfs((p, b) => opfsWrite(p, b).then(() => {}), (p) => opfsDelete(p).then(() => {}))
     if (!ok) console.warn('[bootstrap] WASM VFS failed self-check, using JS RamVfs')
   } catch (e) {
     console.warn('[bootstrap] WASM VFS fallback to JS:', (e as Error)?.message ?? e)
-    vfs = new RamVfs(opfsWrite, opfsDelete)
+    vfs = new RamVfs((p, b) => opfsWrite(p, b).then(() => {}), (p) => opfsDelete(p).then(() => {}))
   }
   let results: { path: string; content: Uint8Array }[] = []
   try {
@@ -223,58 +309,13 @@ async function bootstrap() {
   if (sw?.active) sw.active.postMessage({ type: 'VFS_READY' })
 
   const cdnProxy = createCdnVfsProxy(getVfsRead, (p, b) => vfs?.write(p, b))
-  navigator.serviceWorker.addEventListener('message', async ({ data }: MessageEvent<{ type: string; path?: string; requestId?: string; port?: number; method?: string; url?: string; headers?: [string, string][]; body?: number[] }>) => {
+  navigator.serviceWorker.addEventListener('message', async ({ data }: MessageEvent<{ type: string; path?: string; requestId?: string; bytes?: number[] | null }>) => {
     if (data.type === 'vfs_request') {
       let bytes = getVfsRead(data.path!)
       if (!bytes) bytes = await cdnProxy.read(data.path!)
       navigator.serviceWorker.controller?.postMessage({ type: 'vfs_response', requestId: data.requestId, bytes: bytes ? [...bytes] : null })
     }
-    if (data.type === 'virtual_tcp_request') {
-      const { requestId, port: p, method, url, headers, body } = data
-      const cb = portHandlers.get(p ?? 0)
-      const fullUrl = url ?? 'http://localhost/'
-      const req = {
-        method: method ?? 'GET',
-        url: fullUrl,
-        headers: headers ? Object.fromEntries(headers) : {},
-        path: ''
-      } as { method: string; url: string; path: string; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown; emit?: (ev: string, chunk?: unknown) => unknown }
-      try {
-        const u = new URL(fullUrl, 'http://localhost')
-        req.path = (u.pathname.replace(/^\/__port__\/\d+/, '') || '/')
-      } catch {}
-      if (body?.length) {
-        const listeners: Record<string, ((chunk?: unknown) => void)[]> = {}
-        req.on = (ev: string, fn: (chunk?: unknown) => void) => { (listeners[ev] ??= []).push(fn); return req }
-        req.emit = (ev: string, chunk?: unknown) => { (listeners[ev] ?? []).forEach(f => f(chunk)); return req }
-        queueMicrotask(() => { req.emit!('data', new Uint8Array(body)); req.emit!('end') })
-      }
-      const res = {
-        statusCode: 200,
-        _headers: {} as Record<string, string>,
-        _done: false,
-        setHeader(k: string, v: string) { this._headers[k] = v },
-        end(body = '') {
-          if (this._done) return
-          this._done = true
-          const h = Object.entries(this._headers)
-          navigator.serviceWorker.controller?.postMessage({
-            type: 'virtual_tcp_response',
-            requestId,
-            status: this.statusCode || 200,
-            headers: h,
-            body: typeof body === 'string' ? [...new TextEncoder().encode(body)] : []
-          })
-        }
-      }
-      try {
-        if (cb) cb(req, res)
-        else res.end('No handler')
-      } catch (e) {
-        res.statusCode = 500
-        res.end((e as Error)?.message ?? String(e))
-      }
-    }
+    // virtual_tcp_request removed: HTTP requests now flow SW → TCP Worker → Handler Worker via SAB
   })
 
   ;(globalThis as { __vfsRead?: (path: string) => Uint8Array | null }).__vfsRead = getVfsRead

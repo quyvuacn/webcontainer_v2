@@ -1,7 +1,7 @@
 const mainClients = new Map()
 const pendingVfs = new Map()
-const registeredPorts = new Set()
-const pendingVirtualTcp = new Map()
+const portBuffers = new Map()
+const portQueues = new Map()
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -71,19 +71,8 @@ self.addEventListener('message', ({ data, source }) => {
     mainClients.set(source.id, source)
   }
   if (data.type === 'register_port') {
-    registeredPorts.add(data.port)
-    mainClients.set(source.id, source)
-  }
-  if (data.type === 'virtual_tcp_response') {
-    const pending = pendingVirtualTcp.get(data.requestId)
-    if (pending) {
-      pendingVirtualTcp.delete(data.requestId)
-      const body = data.body ? new Uint8Array(data.body) : new Uint8Array(0)
-      const headers = data.headers ? Object.fromEntries(data.headers) : {}
-      headers['Cross-Origin-Opener-Policy'] = 'same-origin'
-      headers['Cross-Origin-Embedder-Policy'] = 'require-corp'
-      pending.resolve(new Response(body, { status: data.status || 200, headers }))
-    }
+    portBuffers.set(data.port, data.buffer)
+    if (data.ackPort) { data.ackPort.postMessage('ok'); data.ackPort.close() }
   }
   if (data.type === 'vfs_response') {
     const resolve = pendingVfs.get(data.requestId)
@@ -105,24 +94,13 @@ self.addEventListener('fetch', event => {
   const portMatch = url.pathname.match(/^\/__port__\/(\d+)(\/.*|$)/)
   if (portMatch) {
     const port = parseInt(portMatch[1])
-    const hasPort = registeredPorts.has(port)
-    const portList = [...registeredPorts]
-    if (hasPort) {
-      event.respondWith((async () => {
-        const client = mainClients.values().next().value ?? (await self.clients.matchAll())[0]
-        if (!client) return new Response('No main client. Open / first.', { status: 503 })
-        return forwardToMain(event.request, port, client)
-      })())
+    const buf = portBuffers.get(port)
+    if (buf) {
+      event.respondWith(handleVirtualTcp(event.request, buf))
       return
     }
-    const errMsg = `Port ${port} not registered. Registered: [${portList.join(',') || 'none'}]. Run your server in the terminal first.`
-    if (event.request.destination === 'document') {
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:20px;font-family:monospace;color:#8b949e;background:#0d1117"><pre>${errMsg}</pre></body></html>`
-      const h = { 'Content-Type': 'text/html;charset=utf-8', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' }
-      event.respondWith(new Response(html, { status: 200, headers: h }))
-    } else {
-      event.respondWith(new Response(errMsg, { status: 503 }))
-    }
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Port :${port}</title></head><body style="margin:0;padding:16px;font-family:system-ui;background:#0d1117;color:#c9d1d9"><h2>Port :${port} chưa sẵn sàng</h2><p>Chạy <code style="background:#21262d;padding:2px 6px">node server.js</code> trong terminal.</p><button id="btn" style="margin-top:12px;padding:8px 16px;background:#238636;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px">Chạy server</button><script>document.getElementById("btn").onclick=()=>{if(window.parent!==window)window.parent.postMessage({type:"run-preview-cmd",cmd:"node server.js"},"*")}</script></body></html>`
+    event.respondWith(new Response(html, { status: 503, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' } }))
     return
   }
 
@@ -148,29 +126,99 @@ async function injectIsolationHeaders(request) {
   return new Response(resp.body, { status: resp.status, headers: h })
 }
 
-async function forwardToMain(request, port, client) {
-  const requestId = crypto.randomUUID()
+async function serializeRequest(request) {
   const headers = []
   request.headers.forEach((v, k) => headers.push([k, v]))
+  const meta = JSON.stringify({ method: request.method, url: request.url, headers })
+  const metaBytes = new TextEncoder().encode(meta)
   const body = await request.arrayBuffer()
-  return new Promise(resolve => {
-    pendingVirtualTcp.set(requestId, { resolve })
-    client.postMessage({
-      type: 'virtual_tcp_request',
-      requestId,
-      port,
-      method: request.method,
-      url: request.url,
-      headers,
-      body: body.byteLength ? [...new Uint8Array(body)] : null
-    })
-    setTimeout(() => {
-      if (pendingVirtualTcp.has(requestId)) {
-        pendingVirtualTcp.delete(requestId)
-        resolve(new Response('Gateway Timeout: main did not respond in 30s', { status: 504 }))
-      }
-    }, 30000)
+  const out = new Uint8Array(4 + metaBytes.length + body.byteLength)
+  new DataView(out.buffer).setUint32(0, metaBytes.length, true)
+  out.set(metaBytes, 4)
+  out.set(new Uint8Array(body), 4 + metaBytes.length)
+  return out
+}
+
+function deserializeResponse(bytes) {
+  const metaLen = new DataView(bytes.buffer).getUint32(0, true)
+  const meta = JSON.parse(new TextDecoder().decode(bytes.slice(4, 4 + metaLen)))
+  const body = bytes.slice(4 + metaLen)
+  return new Response(body, { status: meta.status || 200, headers: Object.fromEntries(meta.headers || []) })
+}
+
+async function handleVirtualTcp(request, buf) {
+  if (request.headers.get('upgrade') === 'websocket') {
+    const { 0: client, 1: server } = new WebSocketPair()
+    bridgeWebSocket(server, buf)
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  // Serialize requests per-buffer so concurrent fetches don't corrupt the SAB
+  const prev = portQueues.get(buf) || Promise.resolve()
+  let release
+  const gate = new Promise(r => release = r)
+  portQueues.set(buf, prev.then(() => gate))
+  await prev
+
+  try {
+    const ctrl = new Int32Array(buf)
+    const data = new Uint8Array(buf)
+    const DATA_OFF = 12
+
+    const reqBytes = await serializeRequest(request)
+    data.set(reqBytes, DATA_OFF)
+    Atomics.store(ctrl, 1, reqBytes.length)
+    Atomics.store(ctrl, 0, 1)
+    Atomics.notify(ctrl, 0)
+
+    const result = Atomics.waitAsync(ctrl, 0, 1)
+    await (result.value ?? Promise.resolve())
+
+    const respLen = Atomics.load(ctrl, 2)
+    const respBytes = data.slice(DATA_OFF + reqBytes.length, DATA_OFF + reqBytes.length + respLen)
+    Atomics.store(ctrl, 0, 0)
+    return deserializeResponse(respBytes)
+  } finally {
+    release()
+  }
+}
+
+function bridgeWebSocket(ws, buf) {
+  const ctrl = new Int32Array(buf)
+  const data = new Uint8Array(buf)
+  const DATA_OFF = 12
+  if (ws.accept) ws.accept()
+
+  ws.addEventListener('message', ({ data: msg }) => {
+    const bytes = typeof msg === 'string' ? new TextEncoder().encode(msg) : new Uint8Array(msg)
+    const isText = typeof msg === 'string'
+    data.set(bytes, DATA_OFF)
+    Atomics.store(ctrl, 1, bytes.length)
+    Atomics.store(ctrl, 2, isText ? 0 : 1)
+    Atomics.store(ctrl, 0, 1)
+    Atomics.notify(ctrl, 0)
   })
+
+  ws.addEventListener('close', () => {
+    Atomics.store(ctrl, 2, 2)
+    Atomics.store(ctrl, 0, 1)
+    Atomics.notify(ctrl, 0)
+  })
+
+  ;(async () => {
+    while (true) {
+      const result = Atomics.waitAsync(ctrl, 0, 0)
+      await (result.value ?? Promise.resolve())
+      if (Atomics.load(ctrl, 0) !== 2) continue
+      const len = Atomics.load(ctrl, 1)
+      const msgType = Atomics.load(ctrl, 2)
+      const bytes = data.slice(DATA_OFF, DATA_OFF + len)
+      if (msgType === 2) { ws.close(); break }
+      ws.send(msgType === 0 ? new TextDecoder().decode(bytes) : bytes)
+      Atomics.store(ctrl, 0, 0)
+      Atomics.notify(ctrl, 0)
+    }
+  })()
 }
 
 async function serveVfsFile(path, clientId) {

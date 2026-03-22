@@ -49,8 +49,9 @@ function runLoop() {
     Atomics.notify(handCtrl, 0)
 
     if (!waitWithTimeout(handCtrl, 0, 1, TIMEOUT_MS)) {
+      Atomics.store(handCtrl, 0, 0)
       const err = serializeResponse(503, {}, 'Gateway Timeout')
-      swData.set(err, DATA_OFF)
+      swData.set(err, DATA_OFF + reqLen)
       Atomics.store(swCtrl, 2, err.length)
       Atomics.store(swCtrl, 0, 2)
       Atomics.notify(swCtrl, 0)
@@ -59,6 +60,7 @@ function runLoop() {
 
     const respLen = Atomics.load(handCtrl, 2)
     swData.set(handData.slice(DATA_OFF + reqLen, DATA_OFF + reqLen + respLen), DATA_OFF + reqLen)
+    Atomics.store(handCtrl, 0, 0)
     Atomics.store(swCtrl, 2, respLen)
     Atomics.store(swCtrl, 0, 2)
     Atomics.notify(swCtrl, 0)
