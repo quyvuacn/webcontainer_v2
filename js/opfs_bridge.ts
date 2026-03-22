@@ -1,7 +1,7 @@
 let opfsWorker: Worker | null = null;
 const pending = new Map<string, (data: unknown) => void>();
 
-export function initOpfsBridge(workerUrl: string) {
+export function initOpfsBridge(workerUrl: string | URL) {
   if (opfsWorker) return;
   opfsWorker = new Worker(workerUrl, { type: "module" });
   opfsWorker.onmessage = ({ data }: MessageEvent<{ id: string }>) => {

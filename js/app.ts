@@ -151,7 +151,7 @@ function createShellState(vfs: RamVfs, term: Terminal) {
   const spawnNode = createNodeRunner(vfs, terminal, workerRefSlot);
   const spawnSyncAsync = createSpawnSyncAsync(vfs);
   const shell = new Shell(shellVfs as Shell["vfs"], toTerm, {
-    cwd: "~/projects",
+    cwd: "home/user/projects",
     home: "home/user",
     user: "user",
     spawnNode,
@@ -395,26 +395,26 @@ async function init() {
         };
         if (files) {
           for (const [path, content] of Object.entries(files)) {
-            vfs.write("~/projects/" + path, content);
+            vfs.write("home/user/projects/" + path, content);
           }
         }
       }
     } catch {}
     if (!vfs.read("~/projects/package.json")) {
       vfs.write(
-        "~/projects/package.json",
+        "home/user/projects/package.json",
         JSON.stringify({ name: "demo", dependencies: { lodash: "^4.17.21" } }),
       );
       vfs.write(
-        "~/projects/hello.js",
+        "home/user/projects/hello.js",
         'console.log("Hello!"); process.argv.forEach((a,i)=>console.log(i,a))',
       );
       vfs.write(
-        "~/projects/index.html",
+        "home/user/projects/index.html",
         "<html><body><h1>Browser Node</h1><p>F5 restores</p></body></html>",
       );
       vfs.write(
-        "~/projects/server.js",
+        "home/user/projects/server.js",
         'const http=require("http");const PORT=5173;http.createServer((req,res)=>{res.writeHead(200,{"Content-Type":"text/html"});res.end("<h1>OK</h1>")}).listen(PORT,()=>console.log("Server :"+PORT))',
       );
     }

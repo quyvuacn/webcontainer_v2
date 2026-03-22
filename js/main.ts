@@ -366,11 +366,11 @@ export function setupVirtualPort(
   const handSab = new SharedArrayBuffer(SAB_SIZE);
   portSabs.set(port, swSab);
 
-  const tcpWorker = new Worker("/js/tcp_worker.ts", { type: "module" });
+  const tcpWorker = new Worker(new URL("./tcp_worker.ts", import.meta.url), { type: "module" });
   tcpWorker.postMessage({ sw_sab: swSab, hand_sab: handSab });
 
   const { port1, port2 } = new MessageChannel();
-  const handlerWorker = new Worker("/js/handler_worker.ts", { type: "module" });
+  const handlerWorker = new Worker(new URL("./handler_worker.ts", import.meta.url), { type: "module" });
   handlerWorker.postMessage({ hand_sab: handSab, mainPort: port2, port }, [
     port2,
   ]);
@@ -472,7 +472,7 @@ async function bootstrap() {
 
   await acquireTabLock();
 
-  initOpfsBridge("/js/opfs_worker.ts");
+  initOpfsBridge(new URL("./opfs_worker.ts", import.meta.url));
 
   try {
     const wasm = await initWasmVfs();
