@@ -254,22 +254,23 @@ async function bootstrap() {
         _headers: {} as Record<string, string>,
         _done: false,
         setHeader(k: string, v: string) { this._headers[k] = v },
-        end(body = '') {
+        end(body: string | Uint8Array = '') {
           if (this._done) return
           this._done = true
           const h = Object.entries(this._headers)
+          const bodyBytes = body instanceof Uint8Array ? [...body] : [...new TextEncoder().encode(body)]
           navigator.serviceWorker.controller?.postMessage({
             type: 'virtual_tcp_response',
             requestId,
             status: this.statusCode || 200,
             headers: h,
-            body: typeof body === 'string' ? [...new TextEncoder().encode(body)] : []
+            body: bodyBytes
           })
         }
       }
       try {
         if (cb) cb(req, res)
-        else res.end('No handler')
+        else { res.statusCode = 503; res.end(`Port ${p} not registered. Run your server first.`) }
       } catch (e) {
         res.statusCode = 500
         res.end((e as Error)?.message ?? String(e))

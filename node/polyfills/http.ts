@@ -66,6 +66,7 @@ export class ServerResponse extends EventEmitter {
   headersSent = false;
   writableEnded = false;
   private _headers: Record<string, string> = {};
+  _writeBuffer: Uint8Array[] = [];
 
   setHeader(name: string, value: string | number | string[]): this {
     this._headers[name.toLowerCase()] = Array.isArray(value)
@@ -106,10 +107,15 @@ export class ServerResponse extends EventEmitter {
   }
 
   write(
-    _chunk: string | Uint8Array,
+    chunk: string | Uint8Array,
     _enc?: unknown,
     cb?: (err?: Error) => void,
   ): boolean {
+    const bytes =
+      typeof chunk === "string"
+        ? new TextEncoder().encode(chunk)
+        : new Uint8Array(chunk);
+    this._writeBuffer.push(bytes);
     if (typeof cb === "function") cb();
     return true;
   }
