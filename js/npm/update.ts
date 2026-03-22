@@ -1,8 +1,9 @@
+import { CDN_BASE } from "../cdn/config";
 import { resolveAll } from "./resolver";
 import { parseRange, satisfies } from "./semver";
 
 async function fetchLatestInRange(name: string, rangeStr: string) {
-  const r = await fetch(`https://registry.npmjs.org/${name}`);
+  const r = await fetch(`${CDN_BASE}/registry/${name}`);
   if (!r.ok) throw new Error(`npm ERR! ${name}: ${r.status}`);
   const packument = await r.json();
   const versions = Object.keys(packument.versions || {})
@@ -31,13 +32,13 @@ export async function npmUpdate(
 
   const updates: Record<string, string> = {};
   for (const [name, rangeStr] of Object.entries(deps)) {
-    const latest = await fetchLatestInRange(name, rangeStr);
+    const latest = await fetchLatestInRange(name, rangeStr as string);
     if (latest) updates[name] = latest;
   }
 
   const newDeps: Record<string, string> = {};
   for (const [n, r] of Object.entries(deps)) {
-    newDeps[n] = updates[n] ? `^${updates[n]}` : r;
+    newDeps[n] = updates[n] ? `^${updates[n]}` : (r as string);
   }
   const lock = await resolveAll(newDeps);
   const lockId = vfsAcquireLock(`${pkgPath}/node_modules`);

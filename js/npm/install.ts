@@ -8,7 +8,6 @@ export async function npmInstall(
   vfsReleaseLock: (id: number) => void,
   pkgPath = "project",
   resolveAll = defaultResolveAll,
-  opts: { prefetch?: boolean } = {},
 ) {
   const pkgJsonBytes = vfsRead(`${pkgPath}/package.json`);
   if (!pkgJsonBytes) throw new Error("No package.json");

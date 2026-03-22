@@ -13,8 +13,6 @@ export function normalize(path: unknown) {
     }
   }
 
-  console.log("normalize: ", stack.join("/"));
-
   return stack.join("/");
 }
 
@@ -66,7 +64,6 @@ export function resolve(...paths: (string | null | undefined)[]) {
       result = result ? result + "/" + s : s;
     }
   }
-  console.log("resolve: ", result);
 
   return normalize(result || "");
 }

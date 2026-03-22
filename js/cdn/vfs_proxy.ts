@@ -3,7 +3,6 @@ import { fetchFromCdn } from "./resolver";
 export function createCdnVfsProxy(
   vfsRead: (path: string) => Uint8Array | null,
   vfsWrite: (path: string, bytes: Uint8Array) => void,
-  lockfilePath = "project/package-lock.json",
 ) {
   return {
     async read(path: string) {

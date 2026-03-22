@@ -99,8 +99,6 @@ function createPortVfs(
       path: string,
       encoding?: string,
     ): Promise<string | Uint8Array> {
-      console.log("readFile: ", path);
-
       const res = await send("read", { path: norm(path) });
 
       if (!res.bytes)
@@ -161,8 +159,6 @@ function createPortVfs(
     ...(syncFsSab && syncFsPort
       ? {
           readFileSync(path: string, encoding?: string): string | Uint8Array {
-            console.log(path);
-
             const bytes = syncRead(syncFsSab, syncFsPort, norm(path));
             if (!bytes)
               throw Object.assign(new Error(`ENOENT: '${path}'`), {

@@ -12,7 +12,6 @@ import { VFS_PREFIX } from "./config";
 import { createCdnVfsProxy } from "./cdn/vfs_proxy";
 import {
   lazyFetchNodeModulesFile,
-  lazyExistsNodeModulesFile,
 } from "./cdn/lazy_node_modules";
 import { handleSyncFsRequest } from "./lib/sync_vfs_channel";
 

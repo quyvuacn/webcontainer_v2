@@ -27,7 +27,7 @@ export async function npmCi(
   for (const [name, range] of Object.entries(allDeps)) {
     const entry = lock.packages[`node_modules/${name}`];
     if (!entry) throw new Error(`npm ERR! ${name} not in lockfile`);
-    if (!satisfies(entry.version, parseRange(range))) {
+    if (!satisfies(entry.version, parseRange(range as string))) {
       throw new Error(
         `npm ERR! ${name}@${entry.version} does not satisfy ${range}`,
       );
@@ -37,7 +37,7 @@ export async function npmCi(
   const lockId = vfsAcquireLock(`${pkgPath}/node_modules`);
 
   const pkgJsonResults = await Promise.allSettled(
-    Object.entries(lock.packages).map(async ([path, entry]) => {
+    Object.entries(lock.packages).map(async ([path, entry]: [string, { version: string }]) => {
       const name = path.replace("node_modules/", "");
       if (name.startsWith("@types/")) {
         const stub = JSON.stringify({
