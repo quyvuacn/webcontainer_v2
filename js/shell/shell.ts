@@ -9,7 +9,7 @@ interface ShellOpts {
   home?: string
   user?: string
   spawnNode?: (args: string[], opts: { cwd?: string }) => Promise<number>
-  spawnSyncAsync?: (file: string, args: string[], opts: { cwd?: string }) => Promise<{ status?: number }>
+  spawnSyncAsync?: (file: string, args: string[], opts: { cwd?: string }) => Promise<{ status?: number; stdout: string; stderr: string }>
   vfs?: { write?: (p: string, b: Uint8Array) => void }
   vfsRead?: (p: string) => Uint8Array | null
   vfsWrite?: (p: string, b: Uint8Array) => void
@@ -25,12 +25,13 @@ export class Shell {
   user: string
   oldPwd: string | null
   spawnNode?: (args: string[], opts: { cwd?: string }) => Promise<number>
-  spawnSyncAsync?: (file: string, args: string[], opts: { cwd?: string }) => Promise<{ status?: number }>
+  spawnSyncAsync?: (file: string, args: string[], opts: { cwd?: string }) => Promise<{ status?: number; stdout: string; stderr: string }>
   vfsRaw?: { write?: (p: string, b: Uint8Array) => void }
   vfsRead?: (p: string) => Uint8Array | null
   vfsWrite?: (p: string, b: Uint8Array) => void
   vfsAcquireLock?: (p: string) => number
   vfsReleaseLock?: (id: number) => void
+  private abortController: AbortController | null = null
 
   constructor(vfs: Shell['vfs'], write: (t: string) => void, opts: ShellOpts = {}) {
     this.vfs = vfs
@@ -55,6 +56,10 @@ export class Shell {
 
   getCwd() {
     return this.cwd
+  }
+
+  abortCurrentCommand() {
+    this.abortController?.abort()
   }
 
   async execute(line: string) {
@@ -83,6 +88,7 @@ export class Shell {
     }
 
     const writeln = (t: string) => this.write(t + '\r\n')
+    this.abortController = new AbortController()
     const ctx = {
       args: parsed.args,
       vfs: this.vfs,
@@ -98,6 +104,7 @@ export class Shell {
       vfsWrite: this.vfsWrite,
       vfsAcquireLock: this.vfsAcquireLock,
       vfsReleaseLock: this.vfsReleaseLock,
+      abortSignal: this.abortController.signal,
     }
 
     try {
@@ -127,6 +134,8 @@ export class Shell {
     } catch (e) {
       this.write('\x1b[31merror: ' + ((e as Error)?.message ?? e) + '\x1b[0m\r\n')
       return 1
+    } finally {
+      this.abortController = null
     }
   }
 

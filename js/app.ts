@@ -100,6 +100,7 @@ function wireInput(meta: { term: Terminal; shell: Shell; state: { lineBuffer: st
       state.lineBuffer = ''
       state.cursorIndex = 0
       if (terminateWorkerInSlot(state.workerRefSlot)) return
+      shell.abortCurrentCommand()
       const emit = (globalThis as { __wcEmitSIGINT?: () => void }).__wcEmitSIGINT
       if (emit) emit()
       else term.write(shell.getPrompt())

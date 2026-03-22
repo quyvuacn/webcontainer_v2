@@ -3,6 +3,24 @@ import { npmInstall } from '../npm/install'
 import { npmCi } from '../npm/ci'
 import { npmRun } from '../npm/run'
 
+export interface ShellContext {
+  args: string[]
+  vfs: { stat: (p: string) => Promise<{ isFile?: () => boolean; isDirectory: () => boolean }>; readFile?: (p: string, enc: string) => Promise<string>; readdir?: (p: string) => Promise<string[]>; mkdir?: (p: string, opts: { recursive?: boolean }) => Promise<void>; rmdir?: (p: string, opts: { recursive: boolean }) => Promise<void>; unlink?: (p: string) => Promise<void> }
+  cwd: string
+  home: string
+  user?: string
+  write: (s: string) => void
+  writeln: (s: string) => void
+  oldPwd?: string | null
+  spawnNode?: (args: string[], opts: { cwd: string }) => Promise<number>
+  spawnSyncAsync?: (file: string, args: string[], opts: { cwd: string }) => Promise<{ status?: number; stdout: string; stderr: string }>
+  vfsRead?: (p: string) => Uint8Array | null
+  vfsWrite?: (p: string, b: Uint8Array) => void
+  vfsAcquireLock?: (p: string) => number
+  vfsReleaseLock?: (id: number) => void
+  abortSignal?: AbortSignal
+}
+
 const A = {
   reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
   red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m', blue: '\x1b[34m', cyan: '\x1b[36m',
@@ -14,9 +32,9 @@ function resolvePath(cwd: string, input: string | undefined, fallback: string | 
   return Path.resolve(cwd, expanded)
 }
 
-export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<{ exitCode: number; newCwd?: string }>> = {
+export const commands: Record<string, (ctx: ShellContext) => Promise<{ exitCode: number; newCwd?: string }>> = {
   pwd: async ({ cwd, writeln }) => {
-    writeln(cwd as string)
+    writeln(cwd)
     return { exitCode: 0 }
   },
 
@@ -28,9 +46,9 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
         writeln(A.red + 'cd: OLDPWD not set' + A.reset)
         return { exitCode: 1 }
       }
-      return { newCwd: oldPwd as string, exitCode: 0 }
+      return { newCwd: oldPwd!, exitCode: 0 }
     }
-    let target = resolvePath(cwd as string, raw, h, h)
+    let target = resolvePath(cwd, raw, h, h)
     if (!target) target = h
     try {
       const stat = await (vfs as { stat: (p: string) => Promise<{ isDirectory: () => boolean }> }).stat(target)
@@ -46,22 +64,22 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
   },
 
   ls: async ({ args, vfs, cwd, writeln, home }) => {
-    const pathArg = (args as string[]).find(a => !a.startsWith('-'))
-    const target = resolvePath(cwd as string, pathArg, cwd as string, (home as string) ?? 'project')
+    const pathArg = args.find(a => !a.startsWith('-'))
+    const target = resolvePath(cwd, pathArg, cwd, home ?? 'project')
     try {
-      const stat = await (vfs as { stat: (p: string) => Promise<{ isFile: () => boolean; isDirectory: () => boolean }> }).stat(target)
+      const stat = await vfs.stat(target)
       if (stat.isFile()) {
         writeln(Path.basename(target))
         return { exitCode: 0 }
       }
-      const entries = await (vfs as { readdir: (p: string) => Promise<string[]> }).readdir(target)
+      const entries = await vfs.readdir!(target)
       const sorted = entries.sort()
       const lines: string[] = []
       for (const name of sorted) {
         if (name.startsWith('.') && !(args as string[]).some(f => f.includes('a'))) continue
         try {
           const child = Path.join(target, name)
-          const st = await (vfs as { stat: (p: string) => Promise<{ isDirectory: () => boolean }> }).stat(child)
+          const st = await vfs.stat(child)
           const display = st.isDirectory() ? A.blue + A.bold + name + '/' + A.reset : name
           lines.push(display)
         } catch {
@@ -77,13 +95,13 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
   },
 
   cat: async ({ args, vfs, vfsRead, cwd, writeln, home }) => {
-    if (!(args as string[]).length) {
+    if (!args.length) {
       writeln(A.red + 'cat: missing operand' + A.reset)
       return { exitCode: 1 }
     }
     let exitCode = 0
-    for (const arg of args as string[]) {
-      const target = resolvePath(cwd as string, arg, undefined, (home as string) ?? 'project')
+    for (const arg of args) {
+      const target = resolvePath(cwd, arg, undefined, home ?? 'project')
       const p = target.startsWith('/') ? target.slice(1) : target
       try {
         let content: string | undefined
@@ -91,7 +109,7 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
           const bytes = (vfsRead as (p: string) => Uint8Array | null)(p)
           if (bytes != null) content = typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes)
         }
-        if (content === undefined) content = await (vfs as { readFile: (p: string, enc: string) => Promise<string> }).readFile(target, 'utf8')
+        if (content === undefined && vfs.readFile) content = await vfs.readFile(target, 'utf8')
         writeln(typeof content === 'string' ? content : new TextDecoder().decode(content))
       } catch {
         writeln(A.red + `cat: ${target}: No such file or directory` + A.reset)
@@ -102,16 +120,16 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
   },
 
   mkdir: async ({ args, vfs, cwd, writeln, home }) => {
-    const recursive = (args as string[]).includes('-p')
-    const paths = (args as string[]).filter(a => !a.startsWith('-'))
+    const recursive = args.includes('-p')
+    const paths = args.filter(a => !a.startsWith('-'))
     if (!paths.length) {
       writeln(A.red + 'mkdir: missing operand' + A.reset)
       return { exitCode: 1 }
     }
     for (const p of paths) {
-      const target = resolvePath(cwd as string, p, undefined, (home as string) ?? 'project')
+      const target = resolvePath(cwd, p, undefined, home ?? 'project')
       try {
-        await (vfs as { mkdir: (p: string, opts: { recursive?: boolean }) => Promise<void> }).mkdir(target, { recursive })
+        await vfs.mkdir!(target, { recursive })
       } catch (e) {
         writeln(A.red + `mkdir: ${(e as Error)?.message ?? e}` + A.reset)
         return { exitCode: 1 }
@@ -121,8 +139,8 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
   },
 
   rm: async ({ args, vfs, cwd, writeln, home }) => {
-    const recursive = (args as string[]).some(f => /^-[Rr]f?$/.test(f))
-    const paths = (args as string[]).filter(a => !a.startsWith('-'))
+    const recursive = args.some(f => /^-[Rr]f?$/.test(f))
+    const paths = args.filter(a => !a.startsWith('-'))
     if (!paths.length) {
       writeln(A.red + 'rm: missing operand' + A.reset)
       return { exitCode: 1 }
@@ -136,9 +154,9 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
             writeln(A.red + `rm: cannot remove '${target}': is a directory` + A.reset)
             return { exitCode: 1 }
           }
-          await (vfs as { rmdir: (p: string, opts: { recursive: boolean }) => Promise<void> }).rmdir(target, { recursive: true })
+          await vfs.rmdir!(target, { recursive: true })
         } else {
-          await (vfs as { unlink: (p: string) => Promise<void> }).unlink(target)
+          await vfs.unlink!(target)
         }
       } catch {
         writeln(A.red + `rm: cannot remove '${target}'` + A.reset)
@@ -149,9 +167,9 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
   },
 
   echo: async ({ args, write, writeln }) => {
-    const noNewline = (args as string[]).includes('-n')
-    const toPrint = (args as string[]).filter(a => a !== '-n').join(' ')
-    noNewline ? (write as (s: string) => void)(toPrint) : (writeln as (s: string) => void)(toPrint)
+    const noNewline = args.includes('-n')
+    const toPrint = args.filter(a => a !== '-n').join(' ')
+    noNewline ? write(toPrint) : writeln(toPrint)
     return { exitCode: 0 }
   },
 
@@ -170,7 +188,8 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
       ['rm [-rf] <path>', 'remove'],
       ['echo [args]', 'print'],
       ['node <file>', 'run JS file'],
-      ['npm install', 'npm ci', 'npm run <script>'],
+      ['curl [-X method] [-H header] [-d data] [-o file] <url>', 'HTTP client'],
+      ['npm install|ci|run [script]', 'package manager'],
       ['clear', 'clear terminal'],
       ['help', 'show help'],
     ]
@@ -181,7 +200,7 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
     return { exitCode: 0 }
   },
 
-  curl: async ({ args, vfs, cwd, writeln, write }) => {
+  curl: async ({ args, vfs, vfsWrite, cwd, writeln, write, abortSignal }) => {
     const argv = args as string[]
 
     // Parse flags
@@ -241,12 +260,15 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
         method,
         headers,
         body: data ?? undefined,
+        signal: abortSignal,
       })
     } catch (e) {
+      if (abortSignal?.aborted) return { exitCode: 130 }
       if (!silent) writeln(A.red + `curl: ${(e as Error)?.message ?? e}` + A.reset)
       return { exitCode: 1 }
     }
 
+    if (abortSignal?.aborted) return { exitCode: 130 }
     if (verbose || includeHeaders) {
       writeln(A.dim + `< HTTP/${resp.status} ${resp.statusText || ''}` + A.reset)
       resp.headers.forEach((v, k) => writeln(A.dim + `< ${k}: ${v}` + A.reset))
@@ -259,25 +281,29 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
     if (headOnly) return { exitCode: resp.ok ? 0 : 1 }
 
     const buf = await resp.arrayBuffer()
+    if (abortSignal?.aborted) return { exitCode: 130 }
     const bytes = new Uint8Array(buf)
 
     if (outputFile) {
       const outPath = Path.resolve(cwd as string, outputFile)
       try {
-        await (vfs as { writeFile: (p: string, b: Uint8Array) => Promise<void> }).writeFile(outPath, bytes)
-        if (!silent) writeln(`  % Total    % Received\n100  ${bytes.length}  100  ${bytes.length}`)
+        if (vfsWrite) vfsWrite(outPath, bytes)
+        else if ('writeFile' in vfs) await (vfs as unknown as { writeFile: (p: string, b: string) => Promise<void> }).writeFile(outPath, new TextDecoder().decode(bytes))
+        if (!silent && !abortSignal?.aborted) writeln(`  % Total    % Received\n100  ${bytes.length}  100  ${bytes.length}`)
       } catch (e) {
+        if (abortSignal?.aborted) return { exitCode: 130 }
         writeln(A.red + `curl: cannot write to ${outputFile}: ${(e as Error)?.message ?? e}` + A.reset)
         return { exitCode: 1 }
       }
     } else {
+      if (abortSignal?.aborted) return { exitCode: 130 }
       // Try to decode as UTF-8 text; fall back to hex dump for binary
       const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
       const hasBinary = bytes.some(b => b === 0)
       if (hasBinary) {
         writeln(A.yellow + `[binary data: ${bytes.length} bytes — use -o <file> to save]` + A.reset)
       } else {
-        ;(write as (s: string) => void)(text)
+        write(text)
         if (text && !text.endsWith('\n')) writeln('')
       }
     }
@@ -286,7 +312,7 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
   },
 
   node: async ({ args, cwd, writeln, spawnNode }) => {
-    if (!(args as string[]).length) {
+    if (!args.length) {
       writeln(A.red + 'node: usage: node <file> [args...]' + A.reset)
       return { exitCode: 1 }
     }
@@ -294,34 +320,34 @@ export const commands: Record<string, (ctx: Record<string, unknown>) => Promise<
       writeln(A.yellow + 'node: spawnNode not configured' + A.reset)
       return { exitCode: 1 }
     }
-    return { exitCode: await (spawnNode as (a: string[], o: { cwd: string }) => Promise<number>)(args as string[], { cwd: cwd as string }) }
+    return { exitCode: await spawnNode!(args, { cwd }) }
   },
 
   npm: async ({ args, cwd, writeln, vfsRead, vfsWrite, vfsAcquireLock, vfsReleaseLock, spawnSyncAsync }) => {
-    if (!(args as string[]).length) {
+    if (!args.length) {
       writeln('npm <install|ci|run|start> [args...]')
       return { exitCode: 0 }
     }
-    const sub = (args as string[])[0]
+    const sub = args[0]
     try {
       if (sub === 'install' || sub === 'i') {
-        const r = await npmInstall(vfsRead as (p: string) => Uint8Array | null, vfsWrite as (p: string, b: Uint8Array) => void, vfsAcquireLock as (p: string) => number, vfsReleaseLock as (id: number) => void, cwd as string, undefined, { prefetch: true })
+        const r = await npmInstall(vfsRead!, vfsWrite!, vfsAcquireLock!, vfsReleaseLock!, cwd, undefined, { prefetch: true })
         writeln(`added ${r.added} packages`)
         return { exitCode: 0 }
       }
       if (sub === 'ci') {
-        const r = await npmCi(vfsRead as (p: string) => Uint8Array | null, vfsWrite as (p: string, b: Uint8Array) => void, vfsAcquireLock as (p: string) => number, vfsReleaseLock as (id: number) => void, cwd as string, { prefetch: true })
+        const r = await npmCi(vfsRead!, vfsWrite!, vfsAcquireLock!, vfsReleaseLock!, cwd, { prefetch: true })
         writeln(`ci ${r.added} packages`)
         return { exitCode: 0 }
       }
       if (sub === 'run' || sub === 'start') {
-        const script = (args as string[])[1] || (sub === 'start' ? 'start' : null)
+        const script = args[1] || (sub === 'start' ? 'start' : null)
         if (!script) {
           writeln(A.red + 'npm run: missing script name' + A.reset)
           return { exitCode: 1 }
         }
         if (!spawnSyncAsync) throw new Error('spawnSyncAsync not configured')
-        const result = await npmRun(script, vfsRead as (p: string) => Uint8Array | null, spawnSyncAsync as (f: string, a: string[], o: { cwd: string }) => Promise<{ status?: number; stdout: string; stderr: string }>, cwd as string)
+        const result = await npmRun(script, vfsRead!, spawnSyncAsync!, cwd)
         if (result.stdout) writeln(result.stdout)
         if (result.stderr) writeln(A.red + result.stderr + A.reset)
         return { exitCode: result.status ?? 1 }

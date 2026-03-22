@@ -102,8 +102,7 @@ self.addEventListener('fetch', event => {
       event.respondWith(handleVirtualTcpViaMain(event.request, port, mainPort))
       return
     }
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Port :${port}</title></head><body style="margin:0;padding:16px;font-family:system-ui;background:#0d1117;color:#c9d1d9"><h2>Port :${port} chưa sẵn sàng</h2><p>Chạy <code style="background:#21262d;padding:2px 6px">node server.js</code> trong terminal.</p><button id="btn" style="margin-top:12px;padding:8px 16px;background:#238636;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px">Chạy server</button><script>document.getElementById("btn").onclick=()=>{if(window.parent!==window)window.parent.postMessage({type:"run-preview-cmd",cmd:"node server.js"},"*")}</script></body></html>`
-    event.respondWith(new Response(html, { status: 503, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' } }))
+    event.respondWith(unavailableResponse())
     return
   }
 
@@ -119,6 +118,11 @@ self.addEventListener('fetch', event => {
 
   event.respondWith(fetch(event.request))
 })
+
+function unavailableResponse() {
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Connection refused</title></head><body style="margin:0;padding:48px 24px;font-family:system-ui;background:#f8f9fa;color:#5f6368;text-align:center"><p style="font-size:20px;margin:0 0 8px;color:#202124">This site can&rsquo;t be reached</p><p style="font-size:14px;margin:0">localhost refused to connect.</p></body></html>`
+  return new Response(html, { status: 503, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' } })
+}
 
 async function injectIsolationHeaders(request) {
   const isLocalhost = new URL(request.url).hostname === 'localhost' || new URL(request.url).hostname === '127.0.0.1'
@@ -183,7 +187,7 @@ async function handleVirtualTcpViaMain(request, port, mainPort) {
     respIn.close()
     return Promise.reject(e)
   }
-  return p
+  return p.catch(() => unavailableResponse())
 }
 
 function bridgeWebSocket(ws, buf) {
