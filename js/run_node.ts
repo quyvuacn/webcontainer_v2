@@ -33,7 +33,7 @@ export function createNodeRunner(
           }
         }
         workerPortMap.set(port, { reqPort, pending })
-        setupVirtualPort(port, (req: { method?: string; url?: string; path?: string; headers?: Record<string, string>; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown }, res: { setHeader: (k: string, v: string) => void; end: (b?: string) => void }) => {
+        setupVirtualPort(port, (req: { method?: string; url?: string; path?: string; headers?: Record<string, string>; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown }, res: { setHeader: (k: string, v: string) => void; end: (b?: string | Uint8Array) => void }) => {
           const headers: [string, string][] = req.headers ? Object.entries(req.headers) : []
           const body: number[] = []
           const path = (req.path || '/').replace(/^\/__port__\/\d+/, '') || '/'
@@ -97,7 +97,7 @@ export function createNodeRunner(
                 }
               }
               workerPortMap.set(port, { reqPort, pending })
-              setupVirtualPort(port, (req: { method?: string; url?: string; path?: string; headers?: Record<string, string>; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown }, res: { setHeader: (k: string, v: string) => void; end: (b?: string) => void }) => {
+              setupVirtualPort(port, (req: { method?: string; url?: string; path?: string; headers?: Record<string, string>; on?: (ev: string, fn: (chunk?: unknown) => void) => unknown }, res: { setHeader: (k: string, v: string) => void; end: (b?: string | Uint8Array) => void }) => {
                 const headers: [string, string][] = req.headers ? Object.entries(req.headers) : []
                 const body: number[] = []
                 const path = ((req as { path?: string }).path || '/').replace(/^\/__port__\/\d+/, '') || '/'
