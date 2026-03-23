@@ -199,7 +199,18 @@ export function createChildProcessPolyfill() {
       _args?: string[],
       _opts?: SpawnOptions,
     ): ChildProcess {
-      throw new Error("child_process.fork: not supported in browser");
+      // fork() is not supported but return a stub ChildProcess instead of crashing
+      const proc = new ChildProcess();
+      queueMicrotask(() => {
+        proc.stderr.emit(
+          "data",
+          Buffer.from("child_process.fork: not supported in browser\n"),
+        );
+        proc.exitCode = 1;
+        proc.emit("close", 1, null);
+        proc.emit("exit", 1, null);
+      });
+      return proc;
     },
 
     execSync(_cmd: string, _opts?: SpawnOptions): Buffer {

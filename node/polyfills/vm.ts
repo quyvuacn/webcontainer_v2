@@ -49,19 +49,22 @@ function runInNewContext(
   const ctx = sandbox ?? {};
   const keys = Object.keys(ctx);
   const vals = keys.map((k) => ctx[k]);
+  // Try as expression first, fall back to statement block
+  const tryExpr = `(function(${keys.join(",")}) { "use strict"; return (${code}); })`;
+  const tryStmt = `(function(${keys.join(",")}) { ${code} })`;
+  let fn: ((...args: unknown[]) => unknown) | null = null;
   try {
     // eslint-disable-next-line no-new-func
-    const fn = new Function(...keys, `"use strict"; return (${code})`);
-    return fn(...vals);
+    fn = new Function(`return ${tryExpr}`)() as (...args: unknown[]) => unknown;
   } catch {
     try {
       // eslint-disable-next-line no-new-func
-      const fn = new Function(...keys, code);
-      return fn(...vals);
+      fn = new Function(`return ${tryStmt}`)() as (...args: unknown[]) => unknown;
     } catch (e) {
       throw e;
     }
   }
+  return fn!(...vals);
 }
 
 function runInThisContext(

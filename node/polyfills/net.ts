@@ -90,9 +90,11 @@ class Server extends EventEmitter {
   private _host = "";
 
   listen(
-    portOrOptions: number | { port?: number; host?: string; path?: string },
-    hostOrCb?: string | (() => void),
-    _backlogOrCb?: number | (() => void),
+    portOrOptions:
+      | number
+      | { port?: number; host?: string; path?: string; backlog?: number },
+    hostOrBacklogOrCb?: string | number | (() => void),
+    backlogOrCb?: number | (() => void),
     cb?: () => void,
   ): this {
     if (typeof portOrOptions === "object" && portOrOptions !== null) {
@@ -100,18 +102,20 @@ class Server extends EventEmitter {
       this._host = portOrOptions.host ?? "localhost";
     } else {
       this._port = portOrOptions as number;
-      this._host =
-        typeof hostOrCb === "string" ? hostOrCb : "localhost";
+      if (typeof hostOrBacklogOrCb === "string") {
+        this._host = hostOrBacklogOrCb;
+      }
     }
-    this.listening = true;
+    // Find the callback: last function argument
     const callback =
       typeof cb === "function"
         ? cb
-        : typeof _backlogOrCb === "function"
-          ? _backlogOrCb
-          : typeof hostOrCb === "function"
-            ? hostOrCb
+        : typeof backlogOrCb === "function"
+          ? backlogOrCb
+          : typeof hostOrBacklogOrCb === "function"
+            ? hostOrBacklogOrCb
             : undefined;
+    this.listening = true;
     if (callback) setTimeout(callback, 0);
     setTimeout(() => this.emit("listening"), 0);
     return this;

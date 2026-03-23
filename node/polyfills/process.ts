@@ -24,6 +24,7 @@ class ProcessStream extends EventEmitter {
   columns = 80;
   rows = 24;
   fd: number;
+  bytesWritten = 0;
 
   constructor(
     isTTY: boolean,
@@ -40,7 +41,9 @@ class ProcessStream extends EventEmitter {
     _encoding?: string,
     cb?: (err?: Error) => void,
   ): boolean {
-    this._write(String(s).replace(/\r?\n/g, "\r\n"));
+    const str = String(s).replace(/\r?\n/g, "\r\n");
+    this.bytesWritten += str.length;
+    this._write(str);
     cb?.();
     return true;
   }

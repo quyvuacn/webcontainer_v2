@@ -23,7 +23,9 @@
       "Bash(find C:Usersquy.vuvietDesktopcodespacewebcontainer_v2node_modulesvitedist -type f -name *.js)",
       "Bash(find C:Usersquy.vuvietDesktopcodespacewebcontainer_v2node_modulesvite -type f \\\\\\(-name *.ts -o -name *.d.ts -o -name *.js \\\\\\))",
       "Bash(grep:*)",
-      "Bash(wc -l C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/js/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/js/shell/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/js/npm/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/node/polyfills/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/node/*.ts)"
+      "Bash(wc -l C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/js/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/js/shell/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/js/npm/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/node/polyfills/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/node/*.ts)",
+      "Bash(node -e \"const pkg = require\\(''''./node_modules/vite/package.json''''\\); const exp = pkg.exports[''''./module-runner'''']; console.log\\(JSON.stringify\\(exp, null, 2\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\(''''exports'''',{}\\).get\\(''''./module-runner'''',''''NOT FOUND''''\\), indent=2\\)\\)\")"
     ]
   }
 }

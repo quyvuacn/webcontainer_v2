@@ -88,7 +88,6 @@ const BUILTINS = new Set([
   "node:readline",
   "node:repl",
   "node:vm",
-  "node:worker_threads",
   "node:fs/promises",
 ]);
 

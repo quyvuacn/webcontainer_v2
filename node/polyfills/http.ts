@@ -44,7 +44,8 @@ export class IncomingMessage extends EventEmitter {
     return this;
   }
   resume(): this {
-    this.emit("end");
+    // Defer so that callers can attach 'data'/'end' listeners first
+    queueMicrotask(() => this.emit("end"));
     return this;
   }
   pause(): this {

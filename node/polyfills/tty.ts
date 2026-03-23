@@ -42,6 +42,7 @@ export class WriteStream extends EventEmitter {
   columns = 80;
   rows = 24;
   fd: number;
+  bytesWritten = 0;
 
   constructor(fd: number) {
     super();
@@ -49,10 +50,12 @@ export class WriteStream extends EventEmitter {
   }
 
   write(
-    _chunk: string | Uint8Array,
+    chunk: string | Uint8Array,
     _encoding?: string,
     cb?: (err?: Error) => void,
   ): boolean {
+    this.bytesWritten +=
+      typeof chunk === "string" ? chunk.length : chunk.byteLength;
     cb?.();
     return true;
   }

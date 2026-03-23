@@ -69,7 +69,7 @@ export function clearInterval(
   id: ReturnType<typeof globalThis.setInterval> | undefined,
 ): void {
   if (id != null) releaseId(id, nat.clearInterval);
-  nat.clearInterval(id);
+  else nat.clearInterval(id);
 }
 
 export function setImmediate(
