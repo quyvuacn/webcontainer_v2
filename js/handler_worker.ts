@@ -81,4 +81,3 @@ async function runHandlerLoop() {
     Atomics.notify(ctrl, 0);
   }
 }
-

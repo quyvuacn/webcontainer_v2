@@ -92,7 +92,7 @@ await navigator.serviceWorker.ready;
 ### Bước 4.2 — Tab Lock
 
 ```typescript
-await acquireTabLock();  // Navigator.locks API
+await acquireTabLock(); // Navigator.locks API
 ```
 
 Dùng exclusive lock để chặn mở project trong nhiều tab đồng thời. Nếu tab khác đang giữ lock, tab mới bị block.
@@ -118,6 +118,7 @@ try {
 ```
 
 `initWasmVfs()` (`js/vfs_wasm.ts`):
+
 - Load `/runtime/vfs_ram.js` (compiled từ `src/vfs_ram.rs`)
 - Chạy self-check: write/read/delete một file test
 - Nếu pass → dùng WASM VFS; nếu fail → fallback về `RamVfs` (pure JS)
@@ -127,7 +128,7 @@ try {
 ### Bước 4.5 — OPFS Preload
 
 ```typescript
-const results = await opfsListAll();  // timeout 3 giây
+const results = await opfsListAll(); // timeout 3 giây
 for (const { path, content } of results) {
   vfs.preload(path, content);
 }
@@ -138,6 +139,7 @@ for (const { path, content } of results) {
 ### Bước 4.6 — VFS Write Interception
 
 Wrap `vfs.write()` để:
+
 - Ghi async vào OPFS (persistence)
 - Broadcast qua `BroadcastChannel` để sync giữa các tab (nếu có)
 
@@ -167,6 +169,7 @@ main thread → SW: { type: "vfs_response", body, headers }
 ```
 
 Main thread xử lý:
+
 1. Serve built-in ESM stubs (e.g. `builtin/fs`, `builtin/path`)
 2. Serve file từ VFS
 3. Nếu là JS/TS: chạy `rewriteBareSpecifiersInModule()` (đổi `import "express"` → `import "/__r__/node_modules/express/..."`)
@@ -185,7 +188,7 @@ Preload esbuild WASM để transform ESM → CJS tại runtime (tránh cold-star
 ```typescript
 return {
   vfs,
-  VFS_PREFIX,       // e.g. "__r__"
+  VFS_PREFIX, // e.g. "__r__"
   createServer,
   setupVirtualPort,
   registerWorkerVfsPort,
@@ -200,15 +203,16 @@ return {
 
 Sau bootstrap, terminal được kết nối với Shell:
 
-| Phím | Action |
-|------|--------|
-| `Enter` | `shell.execute(cmd)` |
-| `Ctrl+C` | `terminateWorkerInSlot()` — kill Node.js worker |
-| `Tab` | `shell.complete()` — autocomplete |
-| `↑` / `↓` | History navigation |
-| `Backspace` | Xóa ký tự |
+| Phím        | Action                                          |
+| ----------- | ----------------------------------------------- |
+| `Enter`     | `shell.execute(cmd)`                            |
+| `Ctrl+C`    | `terminateWorkerInSlot()` — kill Node.js worker |
+| `Tab`       | `shell.complete()` — autocomplete               |
+| `↑` / `↓`   | History navigation                              |
+| `Backspace` | Xóa ký tự                                       |
 
 **Shell** (`js/shell/shell.ts`):
+
 - Built-in commands (ls, cat, cd, mkdir, rm, ...) — `js/shell/commands.ts`
 - `node <file>` → gọi `createNodeRunner()` — `js/run_node.ts`
 
@@ -222,7 +226,7 @@ Sau bootstrap, terminal được kết nối với Shell:
 
 ```typescript
 const { port1, port2 } = new MessageChannel();
-registerWorkerVfsPort(port1);  // main thread serve VFS requests
+registerWorkerVfsPort(port1); // main thread serve VFS requests
 // port2 → gửi cho Worker
 ```
 
@@ -272,8 +276,8 @@ Gọi `__setupVirtualPort(port, handler)` — hook được inject vào context 
 
 ```typescript
 // 1. Tạo 2 SharedArrayBuffer (4MB mỗi cái)
-const swSab   = new SharedArrayBuffer(4 * 1024 * 1024);  // SW ↔ TCP Worker
-const handSab = new SharedArrayBuffer(4 * 1024 * 1024);  // TCP Worker ↔ Handler Worker
+const swSab = new SharedArrayBuffer(4 * 1024 * 1024); // SW ↔ TCP Worker
+const handSab = new SharedArrayBuffer(4 * 1024 * 1024); // TCP Worker ↔ Handler Worker
 
 // 2. Spawn TCP Worker
 const tcpWorker = new Worker("./tcp_worker.ts");
@@ -338,21 +342,21 @@ Pre-cache toàn bộ static assets (JS, HTML, WASM). Gọi `skipWaiting()` để
 
 ### Message Handler
 
-| Message type | Action |
-|---|---|
-| `SKIP_WAITING` | Force activate SW mới |
-| `VFS_READY` | Đánh dấu client ID sẵn sàng nhận VFS requests |
-| `register_port` | Lưu `swSab` cho port số X |
-| `vfs_response` | Resolve pending VFS promise |
+| Message type    | Action                                        |
+| --------------- | --------------------------------------------- |
+| `SKIP_WAITING`  | Force activate SW mới                         |
+| `VFS_READY`     | Đánh dấu client ID sẵn sàng nhận VFS requests |
+| `register_port` | Lưu `swSab` cho port số X                     |
+| `vfs_response`  | Resolve pending VFS promise                   |
 
 ### Fetch Handler
 
-| URL pattern | Action |
-|---|---|
-| `/runtime/*`, `/sw.js`, `/js/*` | Cache-first (static assets) |
-| `/__port__/<port>/*` | Virtual TCP handler |
-| `/__r__/*` hoặc `/__xxxx__/*` | Gửi `vfs_request` lên main thread |
-| Khác | Network pass-through |
+| URL pattern                     | Action                            |
+| ------------------------------- | --------------------------------- |
+| `/runtime/*`, `/sw.js`, `/js/*` | Cache-first (static assets)       |
+| `/__port__/<port>/*`            | Virtual TCP handler               |
+| `/__r__/*` hoặc `/__xxxx__/*`   | Gửi `vfs_request` lên main thread |
+| Khác                            | Network pass-through              |
 
 ---
 
@@ -378,12 +382,12 @@ Request: GET /express@4.18.2/index.js
 
 Chạy trong Worker riêng, sử dụng `FileSystemSyncAccessHandle` (synchronous I/O):
 
-| Message | Action |
-|---|---|
-| `write` | Queue writes per-path, atomic write qua SyncAccessHandle |
-| `read` | Đọc file từ OPFS directory |
-| `list_all` | Walk toàn bộ OPFS directory tree |
-| `delete` | Xóa file khỏi OPFS |
+| Message    | Action                                                   |
+| ---------- | -------------------------------------------------------- |
+| `write`    | Queue writes per-path, atomic write qua SyncAccessHandle |
+| `read`     | Đọc file từ OPFS directory                               |
+| `list_all` | Walk toàn bộ OPFS directory tree                         |
+| `delete`   | Xóa file khỏi OPFS                                       |
 
 Broadcast `file_changed` event qua `BroadcastChannel` khi file thay đổi (để sync giữa tabs).
 
@@ -443,20 +447,20 @@ Browser fetch /__port__/5173/
 
 ## 12. Key Files Reference
 
-| File | Role |
-|---|---|
-| `index.html:225` | Entry point, script import |
-| `js/app.ts:346` | `init()` — UI bootstrap, terminal wiring |
-| `js/main.ts:454` | `bootstrap()` — VFS, SW, WASM init |
-| `js/main.ts:343` | `setupVirtualPort()` — spawn workers cho HTTP port |
-| `js/vfs_wasm.ts` | Load và init WASM VFS |
-| `js/vfs_ram.ts` | JS RamVfs fallback |
-| `js/opfs_bridge.ts` | OPFS persistence bridge |
-| `js/opfs_worker.ts` | OPFS Worker (SyncAccessHandle) |
-| `js/tcp_worker.ts:21` | TCP spinloop: SW ↔ Handler |
-| `js/handler_worker.ts:48` | Handler spinloop: TCP ↔ Main thread |
-| `js/run_node.ts:20` | `createNodeRunner()` — spawn node Worker |
-| `node/cli.ts:32` | `runNode()` — Node.js runtime entry |
-| `sw/sw.js:74` | Fetch handler (VFS + virtual TCP routing) |
-| `proxy-server/index.js` | npm package cache/proxy server |
-| `vite.config.ts` | Dev server config (COOP/COEP, proxy, middleware) |
+| File                      | Role                                               |
+| ------------------------- | -------------------------------------------------- |
+| `index.html:225`          | Entry point, script import                         |
+| `js/app.ts:346`           | `init()` — UI bootstrap, terminal wiring           |
+| `js/main.ts:454`          | `bootstrap()` — VFS, SW, WASM init                 |
+| `js/main.ts:343`          | `setupVirtualPort()` — spawn workers cho HTTP port |
+| `js/vfs_wasm.ts`          | Load và init WASM VFS                              |
+| `js/vfs_ram.ts`           | JS RamVfs fallback                                 |
+| `js/opfs_bridge.ts`       | OPFS persistence bridge                            |
+| `js/opfs_worker.ts`       | OPFS Worker (SyncAccessHandle)                     |
+| `js/tcp_worker.ts:21`     | TCP spinloop: SW ↔ Handler                         |
+| `js/handler_worker.ts:48` | Handler spinloop: TCP ↔ Main thread                |
+| `js/run_node.ts:20`       | `createNodeRunner()` — spawn node Worker           |
+| `node/cli.ts:32`          | `runNode()` — Node.js runtime entry                |
+| `sw/sw.js:74`             | Fetch handler (VFS + virtual TCP routing)          |
+| `proxy-server/index.js`   | npm package cache/proxy server                     |
+| `vite.config.ts`          | Dev server config (COOP/COEP, proxy, middleware)   |

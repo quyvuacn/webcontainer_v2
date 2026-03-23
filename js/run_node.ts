@@ -19,11 +19,7 @@ export type WorkerRefSlot = {
 
 type PortPending = Map<
   string,
-  (d: {
-    status: number;
-    headers: [string, string][];
-    body: number[];
-  }) => void
+  (d: { status: number; headers: [string, string][]; body: number[] }) => void
 >;
 
 function makeTcpRegHandler(
@@ -97,8 +93,7 @@ function makeTcpRegHandler(
             ? Object.entries(req.headers)
             : [];
           const body: number[] = [];
-          const path =
-            (req.path || "/").replace(/^\/__port__\/\d+/, "") || "/";
+          const path = (req.path || "/").replace(/^\/__port__\/\d+/, "") || "/";
           const q = (req.url || "").includes("?")
             ? (req.url || "").slice((req.url || "").indexOf("?"))
             : "";
@@ -199,7 +194,10 @@ export function createNodeRunner(
           const { port1: p1, port2: p2 } = new MessageChannel();
           registerWorkerVfsPort(p1);
           const { port1: tcpRegC1, port2: tcpRegC2 } = new MessageChannel();
-          tcpRegC1.onmessage = makeTcpRegHandler(workerPortMap, crypto.randomUUID());
+          tcpRegC1.onmessage = makeTcpRegHandler(
+            workerPortMap,
+            crypto.randomUUID(),
+          );
           const child = new Worker(
             new URL("./worker_threads_runner.ts", import.meta.url),
             { type: "module" },

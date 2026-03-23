@@ -396,7 +396,7 @@ async function init() {
     } catch {}
     // if (!vfs.read("/home/user/projects/package.json")) {
     //   console.log(123);
-      
+
     //   vfs.write(
     //     "/home/user/projects/package.json",
     //     JSON.stringify({ name: "demo", dependencies: { lodash: "^4.17.21" } }),

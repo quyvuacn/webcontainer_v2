@@ -36,6 +36,8 @@ const portWorkers = new Map<
 >();
 // SAB per port — persists across SW restarts so reRegisterPorts can resend buffer
 const portSabs = new Map<number, SharedArrayBuffer>();
+// MessagePort returned to main thread from sendPortToSw — closed before re-creating on SW restart
+const portMainPorts = new Map<number, MessagePort>();
 let controllerchangeAttached = false;
 const SAB_SIZE = 4 * 1024 * 1024;
 
@@ -174,9 +176,13 @@ function handleVfsPort(port: MessagePort) {
                 const child = dir + "/" + name;
                 const st = v!.stat?.(child);
                 if (st?.isDirectory()) await deleteDir(child);
-                else v!.delete?.(child);
+                else {
+                  const ok = v!.delete?.(child);
+                  if (!ok) console.warn(`[rmdir] failed to delete ${child}`);
+                }
               }
-              v!.delete?.(dir);
+              const dirOk = v!.delete?.(dir);
+              if (!dirOk) console.warn(`[rmdir] failed to delete dir ${dir}`);
             };
             await deleteDir(path);
           } else {
@@ -262,6 +268,8 @@ export function teardownVirtualPort(port: number, clientId: string): boolean {
     workers.handlerWorker.terminate();
     portWorkers.delete(port);
   }
+  portMainPorts.get(port)?.close();
+  portMainPorts.delete(port);
   portSabs.delete(port);
   portHandlers.delete(port);
   portOwners.delete(port);
@@ -275,9 +283,15 @@ async function processVirtualTcpRequest(
 ): Promise<Uint8Array> {
   const swSab = portSabs.get(port);
   if (!swSab) throw new Error("No SAB for port " + port);
+  const DATA_OFF = 12;
+  const maxPayload = swSab.byteLength - DATA_OFF;
+  if (requestBytes.length > maxPayload) {
+    throw new Error(
+      `Request too large for SAB: ${requestBytes.length} > ${maxPayload}`,
+    );
+  }
   const ctrl = new Int32Array(swSab);
   const data = new Uint8Array(swSab);
-  const DATA_OFF = 12;
   data.set(requestBytes, DATA_OFF);
   Atomics.store(ctrl, 1, requestBytes.length);
   Atomics.store(ctrl, 0, 1);
@@ -291,6 +305,9 @@ async function processVirtualTcpRequest(
   );
   await Promise.race([result.value ?? Promise.resolve(), timeout]);
   const respLen = Atomics.load(ctrl, 2);
+  if (DATA_OFF + requestBytes.length + respLen > swSab.byteLength) {
+    throw new Error(`Response overflows SAB buffer: respLen=${respLen}`);
+  }
   const respBytes = data.slice(
     DATA_OFF + requestBytes.length,
     DATA_OFF + requestBytes.length + respLen,
@@ -300,7 +317,10 @@ async function processVirtualTcpRequest(
 }
 
 function sendPortToSw(port: number, swSab: SharedArrayBuffer) {
+  // Close previous mainPort for this virtual port (SW restart scenario)
+  portMainPorts.get(port)?.close();
   const { port1: mainPort, port2: swPort } = new MessageChannel();
+  portMainPorts.set(port, mainPort);
   mainPort.onmessage = async ({
     data: msg,
   }: MessageEvent<{ requestBytes?: number[]; responsePort?: MessagePort }>) => {
@@ -366,11 +386,16 @@ export function setupVirtualPort(
   const handSab = new SharedArrayBuffer(SAB_SIZE);
   portSabs.set(port, swSab);
 
-  const tcpWorker = new Worker(new URL("./tcp_worker.ts", import.meta.url), { type: "module" });
+  const tcpWorker = new Worker(new URL("./tcp_worker.ts", import.meta.url), {
+    type: "module",
+  });
   tcpWorker.postMessage({ sw_sab: swSab, hand_sab: handSab });
 
   const { port1, port2 } = new MessageChannel();
-  const handlerWorker = new Worker(new URL("./handler_worker.ts", import.meta.url), { type: "module" });
+  const handlerWorker = new Worker(
+    new URL("./handler_worker.ts", import.meta.url),
+    { type: "module" },
+  );
   handlerWorker.postMessage({ hand_sab: handSab, mainPort: port2, port }, [
     port2,
   ]);
@@ -529,6 +554,14 @@ async function bootstrap() {
     ]);
   } catch (e) {
     console.warn("[bootstrap] opfsListAll:", (e as Error)?.message ?? e);
+    window.dispatchEvent(
+      new CustomEvent("bootstrap-warning", {
+        detail: {
+          code: "OPFS_TIMEOUT",
+          message: "OPFS load timed out — persisted files may not be restored",
+        },
+      }),
+    );
   }
   for (const { path, content } of results) {
     vfs!.preload?.(path, content);
@@ -561,7 +594,14 @@ async function bootstrap() {
     console.warn("[bootstrap] SW ready:", (e as Error)?.message ?? e);
     return null;
   });
-  if (sw?.active) sw.active.postMessage({ type: "VFS_READY" });
+  if (sw?.active) {
+    sw.active.postMessage({ type: "VFS_READY" });
+  } else {
+    // SW timed out during bootstrap — send VFS_READY once it becomes active
+    navigator.serviceWorker.ready
+      .then((reg) => reg.active?.postMessage({ type: "VFS_READY" }))
+      .catch(() => {});
+  }
 
   const cdnProxy = createCdnVfsProxy(getVfsRead, (p, b) => vfs?.write(p, b));
   navigator.serviceWorker.addEventListener(

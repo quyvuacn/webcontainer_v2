@@ -32,7 +32,7 @@ export class CJSLoader {
     private builtins: Map<string, unknown>,
     private process: ProcessPolyfill,
     private syncCache?: Map<string, string | Uint8Array>,
-    private fileSource?: FileSource
+    private fileSource?: FileSource,
   ) {}
 
   /**
@@ -81,7 +81,7 @@ export class CJSLoader {
 
     const requireSync = (_id: string): unknown => {
       throw new Error(
-        "Synchronous require() not supported in browser. Use async loader or SyncBridge."
+        "Synchronous require() not supported in browser. Use async loader or SyncBridge.",
       );
     };
 
@@ -109,8 +109,8 @@ export class CJSLoader {
         id.includes("/") && !id.startsWith("@")
           ? id.slice(0, id.indexOf("/"))
           : id.includes("/") && id.startsWith("@")
-          ? id.slice(0, id.indexOf("/", id.indexOf("/") + 1))
-          : id;
+            ? id.slice(0, id.indexOf("/", id.indexOf("/") + 1))
+            : id;
       const subPath = id.slice(pkgName.length); // e.g. "" or "/dist/something"
 
       let dir = callerDir;
@@ -210,7 +210,7 @@ export class CJSLoader {
         this.vfs,
         this.resolver,
         this.syncCache,
-        this.fileSource
+        this.fileSource,
       );
     }
 
@@ -277,7 +277,7 @@ export class CJSLoader {
             this.vfs,
             this.resolver,
             this.syncCache,
-            this.fileSource
+            this.fileSource,
           );
           isEsmBundle = true;
         } else {
@@ -289,7 +289,7 @@ export class CJSLoader {
         content,
         resolved,
         "cjs",
-        tsconfigRaw
+        tsconfigRaw,
       );
       code = result.code;
     }
@@ -321,18 +321,18 @@ export class CJSLoader {
       const pkgDir = dotBinMatch
         ? PathUtils.join(dotBinMatch[1]!, dotBinMatch[2]!)
         : pkgBinMatch
-        ? pkgBinMatch[1]!
-        : null;
+          ? pkgBinMatch[1]!
+          : null;
       if (pkgDir) {
         try {
           const pkgRaw = await this.vfs.readFile(
             PathUtils.join(pkgDir, "package.json"),
-            "utf8"
+            "utf8",
           );
           const pkgJson = JSON.parse(
             typeof pkgRaw === "string"
               ? pkgRaw
-              : new TextDecoder().decode(pkgRaw as Uint8Array)
+              : new TextDecoder().decode(pkgRaw as Uint8Array),
           ) as Record<string, unknown>;
           const main = (pkgJson.main as string | undefined) ?? "index.js";
           entryPath = PathUtils.join(pkgDir, main);
@@ -395,7 +395,7 @@ export class CJSLoader {
         assert: (cond: boolean, ...a: unknown[]) => {
           if (!cond)
             this.process.stderr.write(
-              "Assertion failed: " + (a ?? []).map(String).join(" ") + "\n"
+              "Assertion failed: " + (a ?? []).map(String).join(" ") + "\n",
             );
         },
         clear: prevConsole.clear?.bind(prevConsole) ?? (() => {}),
@@ -455,21 +455,21 @@ export class CJSLoader {
         ((u: string) =>
           u.replace(/^file:\/\/\//, "/").replace(/^file:\/\//, "/"));
       (globalThis as Record<string, unknown>).__wcCreateRequire = (
-        pathOrUrl: string
+        pathOrUrl: string,
       ) => {
         const p =
           pathOrUrl.startsWith("file:") || pathOrUrl.startsWith("blob:")
             ? fileURLToPath(pathOrUrl)
             : pathOrUrl.startsWith("wc-file:")
-            ? pathOrUrl.slice("wc-file:".length)
-            : pathOrUrl;
+              ? pathOrUrl.slice("wc-file:".length)
+              : pathOrUrl;
         return this.createRequire(p);
       };
       try {
         const esbuildMod = await import("esbuild-wasm");
         if (typeof (esbuildMod as { build?: unknown }).build !== "function") {
           throw new Error(
-            "esbuild.build is not a function — ensure esbuild-wasm is initialized"
+            "esbuild.build is not a function — ensure esbuild-wasm is initialized",
           );
         }
         // Wrap esbuild so every build() call gets VFS plugin injected.
@@ -480,13 +480,13 @@ export class CJSLoader {
             this.vfs,
             this.resolver,
             this.syncCache,
-            this.fileSource
+            this.fileSource,
           );
       } catch (e) {
         throw new Error(
           `Failed to load esbuild-wasm (required for config bundling): ${
             e instanceof Error ? e.message : String(e)
-          }`
+          }`,
         );
       }
       try {
@@ -529,7 +529,7 @@ export class CJSLoader {
             const nodeModulesPkg = PathUtils.join(
               PathUtils.dirname(projectPkgJson),
               "node_modules",
-              "package.json"
+              "package.json",
             );
             if (!this.syncCache.has(nodeModulesPkg))
               this.syncCache.set(nodeModulesPkg, content);
@@ -574,12 +574,12 @@ export class CJSLoader {
                       p,
                       typeof raw === "string"
                         ? raw
-                        : new TextDecoder().decode(raw as Uint8Array)
+                        : new TextDecoder().decode(raw as Uint8Array),
                     );
                   } catch {
                     this.syncCache!.set(p, "");
                   }
-                })
+                }),
               );
             } catch {
               // Package dir may not exist
@@ -610,12 +610,12 @@ export class CJSLoader {
                       p,
                       typeof raw === "string"
                         ? raw
-                        : new TextDecoder().decode(raw as Uint8Array)
+                        : new TextDecoder().decode(raw as Uint8Array),
                     );
                   } catch {
                     this.syncCache!.set(p, "");
                   }
-                })
+                }),
               );
             } catch {
               // Project dir may not exist
@@ -732,7 +732,7 @@ export class CJSLoader {
     const __req = this.createRequire(resolved);
     const __resolve = (id: string) => this.resolver.resolve(id, resolved);
     const AsyncFunction = Object.getPrototypeOf(
-      async function () {}
+      async function () {},
     ).constructor;
 
     const fn = new AsyncFunction(
@@ -744,7 +744,7 @@ export class CJSLoader {
       "__dirname",
       "process",
       "globalThis",
-      asyncCode
+      asyncCode,
     );
 
     await fn(
@@ -755,7 +755,7 @@ export class CJSLoader {
       resolved,
       module.dirname,
       this.process,
-      globalThis
+      globalThis,
     );
 
     module.loaded = true;

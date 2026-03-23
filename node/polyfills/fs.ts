@@ -422,11 +422,32 @@ export function createFsPolyfill(
       options: { encoding?: string; withFileTypes?: boolean } | Callback,
       cb?: Callback,
     ) => {
-      const [_opts, callback] = cbOrOptions(options, cb);
+      const [opts, callback] = cbOrOptions(options, cb);
       const done = callback ?? (() => {});
+      const withFileTypes =
+        (opts as { withFileTypes?: boolean })?.withFileTypes ?? false;
+      const resolved = resolve(path);
       vfs
-        .readdir(resolve(path))
-        .then((names) => done(null, names))
+        .readdir(resolved)
+        .then(async (names) => {
+          if (!withFileTypes) return done(null, names);
+          const dirents = await Promise.all(
+            names.map(async (name) => {
+              let isDir = false;
+              try {
+                const st = await vfs.stat(resolved + "/" + name);
+                isDir = st.isDirectory();
+              } catch {}
+              return {
+                name,
+                isFile: () => !isDir,
+                isDirectory: () => isDir,
+                isSymbolicLink: () => false,
+              };
+            }),
+          );
+          done(null, dirents);
+        })
         .catch(done);
     },
 
@@ -559,23 +580,9 @@ export function createFsPolyfill(
       const resolved = PathUtils.normalize(
         resolve(typeof path === "string" ? path : String(path)),
       );
-      const len =
-        typeof data === "string"
-          ? data.length
-          : data instanceof Uint8Array
-            ? data.byteLength
-            : data instanceof ArrayBuffer
-              ? data.byteLength
-              : ArrayBuffer.isView(data)
-                ? data.byteLength
-                : 0;
-      const enc =
-        (options && typeof options === "object" && options.encoding) ?? "utf8";
       const bytes =
         typeof data === "string"
-          ? enc === "utf8" || enc === "utf-8"
-            ? new TextEncoder().encode(data)
-            : new TextEncoder().encode(data)
+          ? new TextEncoder().encode(data) // always UTF-8 for strings
           : data instanceof Uint8Array
             ? data
             : data instanceof ArrayBuffer
@@ -803,7 +810,6 @@ export function createFsPolyfill(
             ? "utf8"
             : undefined,
         );
-        const len = typeof data === "string" ? data.length : data.byteLength;
         return data;
       },
       writeFile: async (
@@ -812,18 +818,8 @@ export function createFsPolyfill(
         _opts?: { encoding?: Encoding },
       ) => {
         const r = resolve(path);
-        let len = typeof data === "string" ? data.length : data.byteLength;
-        // Config bundler (esbuild/Rolldown) sometimes produces 0 bytes → write fallback so Vite can load.
-        if (r.includes("timestamp") && r.endsWith(".mjs")) {
-          if (len === 0) {
-            data =
-              "export default { root: '.', server: { port: 5173 }, clearScreen: false, optimizeDeps: { entries: [] } };\n";
-            len = data.length;
-          }
-        }
         await vfs.writeFile(r, data);
         syncCache?.set(r, data);
-        // __wc__ fetch: SW asks main thread → reads from VFS (single source of truth)
       },
       appendFile: (
         path: string,
@@ -834,10 +830,29 @@ export function createFsPolyfill(
         const r = resolve(path);
         await vfs.mkdir(r, opts ?? {});
       },
-      readdir: (
+      readdir: async (
         path: string,
-        _opts?: { encoding?: string; withFileTypes?: boolean },
-      ) => vfs.readdir(resolve(path)),
+        opts?: { encoding?: string; withFileTypes?: boolean },
+      ) => {
+        const resolved = resolve(path);
+        const names = await vfs.readdir(resolved);
+        if (!opts?.withFileTypes) return names;
+        return Promise.all(
+          names.map(async (name) => {
+            let isDir = false;
+            try {
+              const st = await vfs.stat(resolved + "/" + name);
+              isDir = st.isDirectory();
+            } catch {}
+            return {
+              name,
+              isFile: () => !isDir,
+              isDirectory: () => isDir,
+              isSymbolicLink: () => false,
+            };
+          }),
+        );
+      },
       stat: (path: string) => vfs.stat(resolve(path)).then(toNodeStats),
       lstat: (path: string) => vfs.stat(resolve(path)).then(toNodeStats),
       readlink: (path: string) =>
