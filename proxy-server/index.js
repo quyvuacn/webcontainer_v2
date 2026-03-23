@@ -37,7 +37,9 @@ fs.mkdirSync(LOCK_CACHE_DIR, { recursive: true });
 // ── URL parsing ───────────────────────────────────────────────────────────────
 
 function parseUrl(url) {
-  const p = url.replace(/^\//, "").toLowerCase();
+  // Strip /pkg/ prefix — requests may come directly to proxy with this prefix
+  // when the browser fetches from the CDN base path without going through Vite proxy.
+  const p = url.replace(/^\/pkg\//, "/").replace(/^\//, "").toLowerCase();
 
   // Scoped: @scope/name@version/filepath
   const scoped = p.match(/^(@[^/]+\/[^@/]+)@([^/]+)\/(.+)$/);
@@ -167,7 +169,7 @@ async function handle(req, res) {
     return;
   }
 
-  const url = req.url ?? "";
+  const url = (req.url ?? "").replace(/^\/pkg\//, "/").replace(/^\/pkg$/, "/");
 
   // ── Module 1: POST /resolve — nhận package.json, trả package-lock.json ────
   //
