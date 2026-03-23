@@ -17,6 +17,9 @@ import {
   WC_EXIT_HANDLER,
 } from "../../js/lib/wc_globals";
 import { ModuleCache } from "./cache";
+
+/** Grace period after ESM bundle import() resolves — allows async process.exit() to propagate. */
+const ASYNC_EXIT_GRACE_MS = 80;
 import { detectFormat } from "../transform/detect";
 import {
   esmToCjs,
@@ -351,7 +354,7 @@ export class CJSLoader {
       g[WC_ENTRY_PATH] = entryPath;
       (globalThis as Record<string, unknown>).global = globalThis;
       (globalThis as Record<string, unknown>).process = this.process;
-      // Ensure stdout/stderr have cursorTo (picocolors/CAC expect it; bundlers may strip or use different ref)
+      // Ensure stdout/stderr have cursorTo — some CLI packages require it on a tty-like stream
       const p = this.process as {
         stdout?: { cursorTo?: unknown };
         stderr?: { cursorTo?: unknown };
@@ -643,10 +646,9 @@ export class CJSLoader {
         });
         const mod = await import(/* @vite-ignore */ url);
         URL.revokeObjectURL(url);
-        // Wait briefly for process.exit from async catch (CLI logs error then exits)
         const exitCode = await Promise.race([
           exitPromise,
-          new Promise<null>((r) => setTimeout(() => r(null), 80)),
+          new Promise<null>((r) => setTimeout(() => r(null), ASYNC_EXIT_GRACE_MS)),
         ]);
         const exitHandler = g[WC_EXIT_HANDLER] as ((e: PromiseRejectionEvent) => void) | undefined;
         if (exitHandler) {

@@ -8,7 +8,7 @@ import {
   opfsListAll,
   createBroadcastChannel,
 } from "./opfs_bridge";
-import { VFS_PREFIX, PORT_PATH_REGEX, BUILTIN_PATH_PREFIX, VITE_TIMESTAMP_PATTERN } from "./config";
+import { VFS_PREFIX, PORT_PATH_REGEX, BUILTIN_PATH_PREFIX } from "./config";
 import { SAB_SIZE, DATA_OFF } from "./lib/sab_protocol";
 import { createCdnVfsProxy } from "./cdn/vfs_proxy";
 import { lazyFetchNodeModulesFile } from "./cdn/lazy_node_modules";
@@ -622,12 +622,8 @@ async function bootstrap() {
             if (!bytes) bytes = await cdnProxy.read(reqPath);
             // Lazily rewrite bare specifiers in JS files so transitive imports
             // (e.g. node_modules/vite/dist/node/index.js) work in the browser.
-            if (
-              bytes &&
-              vfs &&
-              /\.(m?js|cjs)$/.test(reqPath) &&
-              !reqPath.includes(VITE_TIMESTAMP_PATTERN)
-            ) {
+            // rewriteBareSpecifiersInModule returns src unchanged if nothing to rewrite.
+            if (bytes && vfs && /\.(m?js|cjs)$/.test(reqPath)) {
               try {
                 const src = new TextDecoder().decode(bytes);
                 const vfsAdapter = createVirtualFSAdapter(vfs);
