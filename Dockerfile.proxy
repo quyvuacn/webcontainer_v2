@@ -6,7 +6,7 @@ COPY proxy-server/package*.json ./
 RUN npm ci --omit=dev
 
 # Copy source
-COPY proxy-server/index.ts ./
+COPY proxy-server/index.js ./
 
 # Persist package cache across container restarts
 VOLUME ["/data"]
@@ -17,5 +17,4 @@ ENV LOCK_CACHE_DIR=/data/lock-cache
 
 EXPOSE 4873
 
-# Node 22 supports --experimental-strip-types (no compilation needed)
-CMD ["node", "--experimental-strip-types", "index.ts"]
+CMD ["node", "index.js"]

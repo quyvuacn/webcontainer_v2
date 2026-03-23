@@ -37,7 +37,7 @@ fs.mkdirSync(LOCK_CACHE_DIR, { recursive: true });
 // ── URL parsing ───────────────────────────────────────────────────────────────
 
 function parseUrl(url) {
-  const p = url.replace(/^\//, "");
+  const p = url.replace(/^\//, "").toLowerCase();
 
   // Scoped: @scope/name@version/filepath
   const scoped = p.match(/^(@[^/]+\/[^@/]+)@([^/]+)\/(.+)$/);
