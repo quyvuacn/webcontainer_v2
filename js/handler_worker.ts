@@ -42,7 +42,7 @@ let pendingResolve:
     };
   }
   if (data.port) port = data.port;
-  if (data.type === "run" && handSab) runLoop();
+  if (data.type === "run" && handSab) runHandlerLoop();
 };
 
 async function runHandlerLoop() {
@@ -61,22 +61,14 @@ async function runHandlerLoop() {
       headers?: Record<string, string>;
       body?: string;
     };
-    if (mainPort) {
-      mainPort.postMessage({ type: "handle_request", port, request: req });
-      response = await new Promise<{
-        status?: number;
-        headers?: Record<string, string>;
-        body?: string;
-      }>((r) => {
-        pendingResolve = r;
-      });
-    } else {
-      response = {
-        status: 200,
-        headers: { "Content-Type": "text/plain" },
-        body: "Hello from Virtual TCP",
-      };
-    }
+    mainPort.postMessage({ type: "handle_request", port, request: req });
+    response = await new Promise<{
+      status?: number;
+      headers?: Record<string, string>;
+      body?: string;
+    }>((r) => {
+      pendingResolve = r;
+    });
 
     const respBytes = serializeResponse(
       response.status || 200,
@@ -90,6 +82,3 @@ async function runHandlerLoop() {
   }
 }
 
-function runLoop() {
-  runHandlerLoop();
-}

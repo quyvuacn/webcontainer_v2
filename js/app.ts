@@ -357,13 +357,7 @@ async function init() {
   term.open(tempDiv);
   term.writeln("\x1b[2mStarting...\x1b[0m");
 
-  function doFitOnce() {
-    requestAnimationFrame(() => {
-      fitAddon.fit();
-      setTimeout(() => fitAddon.fit(), 100);
-    });
-  }
-  doFitOnce();
+  doFit(fitAddon);
   window.addEventListener("resize", () => fitAddon.fit());
 
   try {

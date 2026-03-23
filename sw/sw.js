@@ -19,7 +19,6 @@ self.addEventListener("install", (event) => {
           "/js/http_serialize.ts",
           "/js/tcp_worker.ts",
           "/js/handler_worker.ts",
-          "/js/child_process_browser.ts",
           "/js/child_worker.ts",
           "/js/npm/semver.ts",
           "/js/npm/resolver.ts",

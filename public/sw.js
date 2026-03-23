@@ -20,7 +20,6 @@ self.addEventListener("install", (event) => {
           "/js/tcp_worker.ts",
           "/js/handler_worker.ts",
           "/js/worker_threads_runner.ts",
-          "/js/child_process_browser.ts",
           "/js/child_worker.ts",
           "/js/npm/semver.ts",
           "/js/npm/resolver.ts",

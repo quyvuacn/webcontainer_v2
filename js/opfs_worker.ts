@@ -149,12 +149,12 @@ async function getVfsRoot() {
   vfsRootPromise = (async () => {
     const root = await navigator.storage.getDirectory();
     const vfsDir = await root.getDirectoryHandle(VFS_BASE, { create: true });
-    const entries = [];
+    let hasEntries = false;
     for await (const _ of vfsDir.entries()) {
-      entries.push(1);
-      if (entries.length > 0) break;
+      hasEntries = true;
+      break;
     }
-    if (entries.length === 0) {
+    if (!hasEntries) {
       for await (const [name, handle] of root.entries()) {
         if (name === VFS_BASE || typeof name !== "string" || !name) continue;
         if (handle.kind === "file") {

@@ -17,6 +17,135 @@ export type WorkerRefSlot = {
   } | null;
 };
 
+type PortPending = Map<
+  string,
+  (d: {
+    status: number;
+    headers: [string, string][];
+    body: number[];
+  }) => void
+>;
+
+function makeTcpRegHandler(
+  workerPortMap: Map<number, { reqPort: MessagePort; pending: PortPending }>,
+  defaultClientId: string,
+) {
+  return ({
+    data,
+  }: MessageEvent<{
+    type: string;
+    port?: number;
+    requestPort?: MessagePort;
+    ackPort?: MessagePort;
+    clientId?: string;
+  }>) => {
+    if (
+      data.type === "unregister_virtual_port" &&
+      data.port != null &&
+      data.clientId
+    ) {
+      teardownVirtualPort(data.port, data.clientId);
+      return;
+    }
+    if (
+      data.type === "register_virtual_port" &&
+      data.port != null &&
+      data.requestPort
+    ) {
+      const port = data.port;
+      const reqPort = data.requestPort;
+      const cId = data.clientId ?? defaultClientId;
+      const pending: PortPending = new Map();
+      reqPort.onmessage = ({
+        data: d,
+      }: MessageEvent<{
+        type: string;
+        requestId?: string;
+        status?: number;
+        headers?: [string, string][];
+        body?: number[];
+      }>) => {
+        if (d.type === "virtual_tcp_response" && d.requestId) {
+          const cb = pending.get(d.requestId);
+          if (cb) {
+            pending.delete(d.requestId);
+            cb({
+              status: d.status ?? 200,
+              headers: d.headers ?? [],
+              body: d.body ?? [],
+            });
+          }
+        }
+      };
+      workerPortMap.set(port, { reqPort, pending });
+      const result = setupVirtualPort(
+        port,
+        (
+          req: {
+            method?: string;
+            url?: string;
+            path?: string;
+            headers?: Record<string, string>;
+            on?: (ev: string, fn: (chunk?: unknown) => void) => unknown;
+          },
+          res: {
+            setHeader: (k: string, v: string) => void;
+            end: (b?: string | Uint8Array) => void;
+          },
+        ) => {
+          const headers: [string, string][] = req.headers
+            ? Object.entries(req.headers)
+            : [];
+          const body: number[] = [];
+          const path =
+            (req.path || "/").replace(/^\/__port__\/\d+/, "") || "/";
+          const q = (req.url || "").includes("?")
+            ? (req.url || "").slice((req.url || "").indexOf("?"))
+            : "";
+          const fwdUrl = path + q;
+          const collect = () => {
+            const requestId = crypto.randomUUID();
+            const p = new Promise<{
+              status: number;
+              headers: [string, string][];
+              body: number[];
+            }>((resolve) => {
+              pending.set(requestId, resolve);
+            });
+            reqPort.postMessage({
+              type: "virtual_tcp_request",
+              requestId,
+              method: req.method ?? "GET",
+              url: fwdUrl,
+              headers,
+              body,
+            });
+            p.then(({ status, headers: h, body: b }) => {
+              h.forEach(([k, v]) => res.setHeader(k, v));
+              (res as { statusCode?: number }).statusCode = status;
+              res.end(b.length ? new Uint8Array(b) : "");
+            });
+          };
+          if (req.on) {
+            req.on("data", (chunk: Uint8Array) => {
+              body.push(...chunk);
+            });
+            req.on("end", collect);
+          } else {
+            collect();
+          }
+        },
+        cId,
+      );
+      if (data.ackPort) {
+        if (result.ok === false)
+          data.ackPort.postMessage({ error: result.error });
+        else data.ackPort.postMessage({ ok: true });
+      }
+    }
+  };
+}
+
 export function createNodeRunner(
   _rawVfs: unknown,
   terminal: { write: (s: string) => void; writeError?: (s: string) => void },
@@ -31,139 +160,11 @@ export function createNodeRunner(
     registerWorkerVfsPort(port1);
 
     const { port1: tcpReg1, port2: tcpReg2 } = new MessageChannel();
-    type PortPending = Map<
-      string,
-      (d: {
-        status: number;
-        headers: [string, string][];
-        body: number[];
-      }) => void
-    >;
     const workerPortMap = new Map<
       number,
       { reqPort: MessagePort; pending: PortPending }
     >();
-    tcpReg1.onmessage = ({
-      data,
-    }: MessageEvent<{
-      type: string;
-      port?: number;
-      requestPort?: MessagePort;
-      ackPort?: MessagePort;
-      clientId?: string;
-    }>) => {
-      if (
-        data.type === "unregister_virtual_port" &&
-        data.port != null &&
-        data.clientId
-      ) {
-        teardownVirtualPort(data.port, data.clientId);
-        return;
-      }
-      if (
-        data.type === "register_virtual_port" &&
-        data.port != null &&
-        data.requestPort
-      ) {
-        const port = data.port;
-        const reqPort = data.requestPort;
-        const pending = new Map<
-          string,
-          (d: {
-            status: number;
-            headers: [string, string][];
-            body: number[];
-          }) => void
-        >();
-        reqPort.onmessage = ({
-          data: d,
-        }: MessageEvent<{
-          type: string;
-          requestId?: string;
-          status?: number;
-          headers?: [string, string][];
-          body?: number[];
-        }>) => {
-          if (d.type === "virtual_tcp_response" && d.requestId) {
-            const cb = pending.get(d.requestId);
-            if (cb) {
-              pending.delete(d.requestId);
-              cb({
-                status: d.status ?? 200,
-                headers: d.headers ?? [],
-                body: d.body ?? [],
-              });
-            }
-          }
-        };
-        workerPortMap.set(port, { reqPort, pending });
-        const cId = data.clientId ?? clientId;
-        const result = setupVirtualPort(
-          port,
-          (
-            req: {
-              method?: string;
-              url?: string;
-              path?: string;
-              headers?: Record<string, string>;
-              on?: (ev: string, fn: (chunk?: unknown) => void) => unknown;
-            },
-            res: {
-              setHeader: (k: string, v: string) => void;
-              end: (b?: string | Uint8Array) => void;
-            },
-          ) => {
-            const headers: [string, string][] = req.headers
-              ? Object.entries(req.headers)
-              : [];
-            const body: number[] = [];
-            const path =
-              (req.path || "/").replace(/^\/__port__\/\d+/, "") || "/";
-            const q = (req.url || "").includes("?")
-              ? (req.url || "").slice((req.url || "").indexOf("?"))
-              : "";
-            const fwdUrl = path + q;
-            const collect = () => {
-              const requestId = crypto.randomUUID();
-              const p = new Promise<{
-                status: number;
-                headers: [string, string][];
-                body: number[];
-              }>((resolve) => {
-                pending.set(requestId, resolve);
-              });
-              reqPort.postMessage({
-                type: "virtual_tcp_request",
-                requestId,
-                method: req.method ?? "GET",
-                url: fwdUrl,
-                headers,
-                body,
-              });
-              p.then(({ status, headers: h, body: b }) => {
-                h.forEach(([k, v]) => res.setHeader(k, v));
-                (res as { statusCode?: number }).statusCode = status;
-                res.end(b.length ? new Uint8Array(b) : "");
-              });
-            };
-            if (req.on) {
-              req.on("data", (chunk: Uint8Array) => {
-                body.push(...chunk);
-              });
-              req.on("end", collect);
-            } else {
-              collect();
-            }
-          },
-          cId,
-        );
-        if (data.ackPort) {
-          if (result.ok === false)
-            data.ackPort.postMessage({ error: result.error });
-          else data.ackPort.postMessage({ ok: true });
-        }
-      }
-    };
+    tcpReg1.onmessage = makeTcpRegHandler(workerPortMap, clientId);
 
     const worker = new Worker(
       new URL("./worker_threads_runner.ts", import.meta.url),
@@ -198,128 +199,7 @@ export function createNodeRunner(
           const { port1: p1, port2: p2 } = new MessageChannel();
           registerWorkerVfsPort(p1);
           const { port1: tcpRegC1, port2: tcpRegC2 } = new MessageChannel();
-          tcpRegC1.onmessage = ({
-            data: d,
-          }: MessageEvent<{
-            type: string;
-            port?: number;
-            requestPort?: MessagePort;
-            ackPort?: MessagePort;
-            clientId?: string;
-          }>) => {
-            if (
-              d.type === "unregister_virtual_port" &&
-              d.port != null &&
-              d.clientId
-            ) {
-              teardownVirtualPort(d.port, d.clientId);
-              return;
-            }
-            if (
-              d.type === "register_virtual_port" &&
-              d.port != null &&
-              d.requestPort
-            ) {
-              const port = d.port;
-              const reqPort = d.requestPort;
-              const cId = d.clientId ?? crypto.randomUUID();
-              const pending = new Map<
-                string,
-                (d: {
-                  status: number;
-                  headers: [string, string][];
-                  body: number[];
-                }) => void
-              >();
-              reqPort.onmessage = ({
-                data: r,
-              }: MessageEvent<{
-                type: string;
-                requestId?: string;
-                status?: number;
-                headers?: [string, string][];
-                body?: number[];
-              }>) => {
-                if (r.type === "virtual_tcp_response" && r.requestId) {
-                  const cb = pending.get(r.requestId);
-                  if (cb) {
-                    pending.delete(r.requestId);
-                    cb({
-                      status: r.status ?? 200,
-                      headers: r.headers ?? [],
-                      body: r.body ?? [],
-                    });
-                  }
-                }
-              };
-              workerPortMap.set(port, { reqPort, pending });
-              const result = setupVirtualPort(
-                port,
-                (
-                  req: {
-                    method?: string;
-                    url?: string;
-                    path?: string;
-                    headers?: Record<string, string>;
-                    on?: (ev: string, fn: (chunk?: unknown) => void) => unknown;
-                  },
-                  res: {
-                    setHeader: (k: string, v: string) => void;
-                    end: (b?: string | Uint8Array) => void;
-                  },
-                ) => {
-                  const headers: [string, string][] = req.headers
-                    ? Object.entries(req.headers)
-                    : [];
-                  const body: number[] = [];
-                  const path =
-                    ((req as { path?: string }).path || "/").replace(
-                      /^\/__port__\/\d+/,
-                      "",
-                    ) || "/";
-                  const q = (req.url || "").includes("?")
-                    ? (req.url || "").slice((req.url || "").indexOf("?"))
-                    : "";
-                  const fwdUrl = path + q;
-                  const collect = () => {
-                    const rid = crypto.randomUUID();
-                    const pr = new Promise<{
-                      status: number;
-                      headers: [string, string][];
-                      body: number[];
-                    }>((resolve) => {
-                      pending.set(rid, resolve);
-                    });
-                    reqPort.postMessage({
-                      type: "virtual_tcp_request",
-                      requestId: rid,
-                      method: req.method ?? "GET",
-                      url: fwdUrl,
-                      headers,
-                      body,
-                    });
-                    pr.then(({ status, headers: h, body: b }) => {
-                      h.forEach(([k, v]) => res.setHeader(k, v));
-                      (res as { statusCode?: number }).statusCode = status;
-                      res.end(b.length ? new Uint8Array(b) : "");
-                    });
-                  };
-                  if (req.on) {
-                    req.on("data", (chunk: Uint8Array) => {
-                      body.push(...chunk);
-                    });
-                    req.on("end", collect);
-                  } else collect();
-                },
-                cId,
-              );
-              if (d.ackPort) {
-                if (result.ok === false)
-                  d.ackPort.postMessage({ error: result.error });
-                else d.ackPort.postMessage({ ok: true });
-              }
-            }
-          };
+          tcpRegC1.onmessage = makeTcpRegHandler(workerPortMap, crypto.randomUUID());
           const child = new Worker(
             new URL("./worker_threads_runner.ts", import.meta.url),
             { type: "module" },

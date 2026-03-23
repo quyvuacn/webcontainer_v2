@@ -22,7 +22,8 @@
       "Bash(cmd //c \"taskkill /PID 6888 /F\")",
       "Bash(find C:Usersquy.vuvietDesktopcodespacewebcontainer_v2node_modulesvitedist -type f -name *.js)",
       "Bash(find C:Usersquy.vuvietDesktopcodespacewebcontainer_v2node_modulesvite -type f \\\\\\(-name *.ts -o -name *.d.ts -o -name *.js \\\\\\))",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(wc -l C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/js/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/js/shell/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/js/npm/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/node/polyfills/*.ts C:/Users/vuvie/Videos/Desktop/projects/webcontainer_v2/node/*.ts)"
     ]
   }
 }
