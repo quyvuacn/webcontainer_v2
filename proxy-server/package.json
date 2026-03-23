@@ -4,13 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node --experimental-strip-types index.ts",
-    "dev": "node --watch --experimental-strip-types index.ts"
+    "start": "node index.js",
+    "dev": "node --watch index.js"
   },
   "dependencies": {
     "tar-stream": "^3.1.7"
-  },
-  "devDependencies": {
-    "@types/tar-stream": "^3.1.4"
   }
 }

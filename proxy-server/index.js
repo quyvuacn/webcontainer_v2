@@ -36,13 +36,7 @@ fs.mkdirSync(LOCK_CACHE_DIR, { recursive: true });
 
 // ── URL parsing ───────────────────────────────────────────────────────────────
 
-interface ParsedUrl {
-  pkg: string; // e.g. "vite" or "@vitejs/plugin-react"
-  version: string; // e.g. "6.0.0"
-  filepath: string; // e.g. "dist/client/client.mjs"
-}
-
-function parseUrl(url: string): ParsedUrl | null {
+function parseUrl(url) {
   const p = url.replace(/^\//, "");
 
   // Scoped: @scope/name@version/filepath
@@ -59,23 +53,19 @@ function parseUrl(url: string): ParsedUrl | null {
 
 // ── Cache paths ───────────────────────────────────────────────────────────────
 
-function pkgCacheDir(pkg: string, version: string): string {
+function pkgCacheDir(pkg, version) {
   // @scope/name → _scope_name  (safe directory name)
   const safe = pkg.replace(/^@/, "_").replace("/", "__");
   return path.join(CACHE_DIR, safe, version);
 }
 
-function cachedFilePath(
-  pkg: string,
-  version: string,
-  filepath: string,
-): string {
+function cachedFilePath(pkg, version, filepath) {
   return path.join(pkgCacheDir(pkg, version), filepath);
 }
 
 // ── HTTP helper ───────────────────────────────────────────────────────────────
 
-function httpsGet(url: string): Promise<http.IncomingMessage> {
+function httpsGet(url) {
   return new Promise((resolve, reject) => {
     https
       .get(url, { headers: { "User-Agent": "npm-proxy/1.0" } }, (res) => {
@@ -84,7 +74,7 @@ function httpsGet(url: string): Promise<http.IncomingMessage> {
           res.statusCode === 302 ||
           res.statusCode === 307
         ) {
-          return resolve(httpsGet(res.headers.location!));
+          return resolve(httpsGet(res.headers.location));
         }
         resolve(res);
       })
@@ -94,22 +84,22 @@ function httpsGet(url: string): Promise<http.IncomingMessage> {
 
 // ── Tarball extraction ────────────────────────────────────────────────────────
 
-const extracting = new Map<string, Promise<void>>();
+const extracting = new Map();
 
-async function downloadAndExtract(pkg: string, version: string): Promise<void> {
+async function downloadAndExtract(pkg, version) {
   const cacheDir = pkgCacheDir(pkg, version);
   const doneFile = path.join(cacheDir, ".extracted");
 
   if (fs.existsSync(doneFile)) return;
 
   const key = `${pkg}@${version}`;
-  if (extracting.has(key)) return extracting.get(key)!;
+  if (extracting.has(key)) return extracting.get(key);
 
   const work = (async () => {
     fs.mkdirSync(cacheDir, { recursive: true });
 
     // Tarball URL: scoped packages use last segment for filename
-    const pkgBasename = pkg.includes("/") ? pkg.split("/").pop()! : pkg;
+    const pkgBasename = pkg.includes("/") ? pkg.split("/").pop() : pkg;
     const tarballUrl = `${NPM_REGISTRY}/${pkg}/-/${pkgBasename}-${version}.tgz`;
 
     console.log(`[proxy] downloading ${key}`);
@@ -117,7 +107,7 @@ async function downloadAndExtract(pkg: string, version: string): Promise<void> {
     if (res.statusCode !== 200)
       throw new Error(`Registry returned ${res.statusCode} for ${tarballUrl}`);
 
-    await new Promise<void>((resolve, reject) => {
+    await new Promise((resolve, reject) => {
       const gunzip = zlib.createGunzip();
       const extract = tarExtract();
 
@@ -133,8 +123,8 @@ async function downloadAndExtract(pkg: string, version: string): Promise<void> {
         const dest = path.join(cacheDir, rel);
         fs.mkdirSync(path.dirname(dest), { recursive: true });
 
-        const chunks: Buffer[] = [];
-        stream.on("data", (c: Buffer) => chunks.push(c));
+        const chunks = [];
+        stream.on("data", (c) => chunks.push(c));
         stream.on("end", () => {
           fs.writeFileSync(dest, Buffer.concat(chunks));
           next();
@@ -161,14 +151,14 @@ async function downloadAndExtract(pkg: string, version: string): Promise<void> {
 
 // ── Request handler ───────────────────────────────────────────────────────────
 
-function setCorsHeaders(res: http.ServerResponse) {
+function setCorsHeaders(res) {
   // Required for COEP: require-corp pages
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
 }
 
-async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
+async function handle(req, res) {
   setCorsHeaders(res);
 
   if (req.method === "OPTIONS") {
@@ -188,8 +178,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   //                → read package-lock.json → write cache → rm tmp → trả về
   //
   if (req.method === "POST" && url === "/resolve") {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(chunk as Buffer);
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
     const body = Buffer.concat(chunks);
 
     const hash = crypto
@@ -230,7 +220,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       res.end(lockContent);
     } catch (e) {
       res.writeHead(500);
-      res.end(`npm resolve failed: ${(e as Error).message}`);
+      res.end(`npm resolve failed: ${e.message}`);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -244,8 +234,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const pkgName = url.slice("/registry/".length);
     try {
       const upstream = await httpsGet(`${NPM_REGISTRY}/${pkgName}`);
-      const chunks: Buffer[] = [];
-      for await (const chunk of upstream) chunks.push(chunk as Buffer);
+      const chunks = [];
+      for await (const chunk of upstream) chunks.push(chunk);
       const body = Buffer.concat(chunks);
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Cache-Control", "public, max-age=300");
@@ -253,7 +243,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       res.end(body);
     } catch (e) {
       res.writeHead(502);
-      res.end((e as Error).message);
+      res.end(e.message);
     }
     return;
   }
@@ -270,12 +260,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   try {
     await downloadAndExtract(pkg, version);
   } catch (e) {
-    console.error(
-      `[proxy] extract error for ${pkg}@${version}:`,
-      (e as Error).message,
-    );
+    console.error(`[proxy] extract error for ${pkg}@${version}:`, e.message);
     res.writeHead(502);
-    res.end(`Failed to fetch package: ${(e as Error).message}`);
+    res.end(`Failed to fetch package: ${e.message}`);
     return;
   }
 
@@ -304,7 +291,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   res.end(bytes);
 }
 
-function guessContentType(filepath: string): string {
+function guessContentType(filepath) {
   if (filepath.endsWith(".json")) return "application/json";
   if (
     filepath.endsWith(".mjs") ||
