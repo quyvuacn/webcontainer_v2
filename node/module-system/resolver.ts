@@ -76,6 +76,20 @@ const BUILTINS = new Set([
   "node:v8",
   "node:tls",
   "node:http2",
+  "node:net",
+  "node:querystring",
+  "node:string_decoder",
+  "node:zlib",
+  "node:timers",
+  "node:perf_hooks",
+  "node:dns",
+  "node:dgram",
+  "node:cluster",
+  "node:readline",
+  "node:repl",
+  "node:vm",
+  "node:worker_threads",
+  "node:fs/promises",
 ]);
 
 /** Check if id is a Node builtin (for browser rewrite to /__wc__/builtin/<name>). */

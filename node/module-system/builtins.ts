@@ -31,6 +31,12 @@ import { createWorkerThreadsPolyfill } from "../polyfills/worker_threads";
 import { createZlibPolyfill } from "../polyfills/zlib";
 import { createReadlinePolyfill } from "../polyfills/readline";
 import { createTimersPolyfill } from "../polyfills/timers";
+import { createQuerystringPolyfill } from "../polyfills/querystring";
+import { createNetPolyfill } from "../polyfills/net";
+import { createVmPolyfill } from "../polyfills/vm";
+import { createDgramPolyfill } from "../polyfills/dgram";
+import { createClusterPolyfill } from "../polyfills/cluster";
+import { createReplPolyfill } from "../polyfills/repl";
 import type { ProcessPolyfill } from "../polyfills/process";
 
 export function createBuiltinMap(
@@ -110,6 +116,18 @@ export function createBuiltinMap(
     ["node:readline", createReadlinePolyfill()],
     ["timers", createTimersPolyfill()],
     ["node:timers", createTimersPolyfill()],
+    ["querystring", createQuerystringPolyfill()],
+    ["node:querystring", createQuerystringPolyfill()],
+    ["net", createNetPolyfill()],
+    ["node:net", createNetPolyfill()],
+    ["vm", createVmPolyfill()],
+    ["node:vm", createVmPolyfill()],
+    ["dgram", createDgramPolyfill()],
+    ["node:dgram", createDgramPolyfill()],
+    ["cluster", createClusterPolyfill()],
+    ["node:cluster", createClusterPolyfill()],
+    ["repl", createReplPolyfill()],
+    ["node:repl", createReplPolyfill()],
   ]);
 
   return map;
