@@ -32,7 +32,7 @@ export class CJSLoader {
     private builtins: Map<string, unknown>,
     private process: ProcessPolyfill,
     private syncCache?: Map<string, string | Uint8Array>,
-    private fileSource?: FileSource,
+    private fileSource?: FileSource
   ) {}
 
   /**
@@ -81,7 +81,7 @@ export class CJSLoader {
 
     const requireSync = (_id: string): unknown => {
       throw new Error(
-        "Synchronous require() not supported in browser. Use async loader or SyncBridge.",
+        "Synchronous require() not supported in browser. Use async loader or SyncBridge."
       );
     };
 
@@ -89,8 +89,89 @@ export class CJSLoader {
       throw new Error("require.resolve is async — use loader.resolve()");
     };
 
-    requireAsync.resolve = async (id: string) => {
-      return this.resolver.resolve(id, callerPath);
+    // Synchronous require.resolve — needed for ESM bundles that call it without await
+    // (e.g. vite's resolveDependencyVersion: path.resolve(require.resolve("rollup"), "../../package.json"))
+    // If resolve is async (returns Promise), path.resolve coerces it to "[object Promise]" → wrong path.
+    requireAsync.resolve = (id: string): string => {
+      // Normalize callerPath: strip wc-file: prefix used by esbuild VFS plugin
+      const base = callerPath.startsWith("wc-file:")
+        ? callerPath.slice("wc-file:".length)
+        : callerPath;
+      const callerDir = PathUtils.dirname(base);
+
+      // For relative/absolute ids, resolve directly
+      if (id.startsWith("/") || id.startsWith("./") || id.startsWith("../")) {
+        return PathUtils.join(callerDir, id);
+      }
+
+      // For bare package names, walk up looking for node_modules/<id>/package.json
+      const pkgName =
+        id.includes("/") && !id.startsWith("@")
+          ? id.slice(0, id.indexOf("/"))
+          : id.includes("/") && id.startsWith("@")
+          ? id.slice(0, id.indexOf("/", id.indexOf("/") + 1))
+          : id;
+      const subPath = id.slice(pkgName.length); // e.g. "" or "/dist/something"
+
+      let dir = callerDir;
+      for (let i = 0; i < 15 && dir && dir !== "/"; i++) {
+        const nmDir = PathUtils.join(dir, "node_modules", pkgName);
+        const pkgJsonPath = PathUtils.join(nmDir, "package.json");
+
+        let pkgText: string | undefined;
+        const cached = this.syncCache?.get(pkgJsonPath);
+        if (cached !== undefined) {
+          pkgText =
+            typeof cached === "string"
+              ? cached
+              : new TextDecoder().decode(cached);
+        } else if (this.vfs.readFileSync) {
+          try {
+            const raw = this.vfs.readFileSync(pkgJsonPath, "utf8");
+            pkgText =
+              typeof raw === "string"
+                ? raw
+                : new TextDecoder().decode(raw as Uint8Array);
+          } catch {
+            /* not found at this level */
+          }
+        }
+
+        if (pkgText !== undefined) {
+          if (subPath) {
+            // Subpath import e.g. require.resolve("pkg/dist/file")
+            return PathUtils.join(nmDir, subPath);
+          }
+          try {
+            const pkg = JSON.parse(pkgText) as Record<string, unknown>;
+            // Resolve main entry: check exports["."] then main then index.js
+            const exp = pkg.exports as Record<string, unknown> | undefined;
+            const dotExport = exp?.["."];
+            let main: string | undefined;
+            if (typeof dotExport === "string") {
+              main = dotExport;
+            } else if (dotExport && typeof dotExport === "object") {
+              const d = dotExport as Record<string, unknown>;
+              main =
+                (d.require as string) ||
+                (d.node as string) ||
+                (d.default as string);
+            }
+            if (!main) main = (pkg.main as string) || "index.js";
+            if (main.startsWith("./")) main = main.slice(2);
+
+            return PathUtils.join(nmDir, main);
+          } catch {
+            /* malformed package.json */
+          }
+        }
+
+        dir = PathUtils.dirname(dir);
+      }
+
+      throw Object.assign(new Error(`Cannot find module '${id}'`), {
+        code: "MODULE_NOT_FOUND",
+      });
     };
 
     return requireAsync;
@@ -129,7 +210,7 @@ export class CJSLoader {
         this.vfs,
         this.resolver,
         this.syncCache,
-        this.fileSource,
+        this.fileSource
       );
     }
 
@@ -196,7 +277,7 @@ export class CJSLoader {
             this.vfs,
             this.resolver,
             this.syncCache,
-            this.fileSource,
+            this.fileSource
           );
           isEsmBundle = true;
         } else {
@@ -208,7 +289,7 @@ export class CJSLoader {
         content,
         resolved,
         "cjs",
-        tsconfigRaw,
+        tsconfigRaw
       );
       code = result.code;
     }
@@ -240,18 +321,18 @@ export class CJSLoader {
       const pkgDir = dotBinMatch
         ? PathUtils.join(dotBinMatch[1]!, dotBinMatch[2]!)
         : pkgBinMatch
-          ? pkgBinMatch[1]!
-          : null;
+        ? pkgBinMatch[1]!
+        : null;
       if (pkgDir) {
         try {
           const pkgRaw = await this.vfs.readFile(
             PathUtils.join(pkgDir, "package.json"),
-            "utf8",
+            "utf8"
           );
           const pkgJson = JSON.parse(
             typeof pkgRaw === "string"
               ? pkgRaw
-              : new TextDecoder().decode(pkgRaw as Uint8Array),
+              : new TextDecoder().decode(pkgRaw as Uint8Array)
           ) as Record<string, unknown>;
           const main = (pkgJson.main as string | undefined) ?? "index.js";
           entryPath = PathUtils.join(pkgDir, main);
@@ -314,7 +395,7 @@ export class CJSLoader {
         assert: (cond: boolean, ...a: unknown[]) => {
           if (!cond)
             this.process.stderr.write(
-              "Assertion failed: " + (a ?? []).map(String).join(" ") + "\n",
+              "Assertion failed: " + (a ?? []).map(String).join(" ") + "\n"
             );
         },
         clear: prevConsole.clear?.bind(prevConsole) ?? (() => {}),
@@ -374,11 +455,13 @@ export class CJSLoader {
         ((u: string) =>
           u.replace(/^file:\/\/\//, "/").replace(/^file:\/\//, "/"));
       (globalThis as Record<string, unknown>).__wcCreateRequire = (
-        pathOrUrl: string,
+        pathOrUrl: string
       ) => {
         const p =
           pathOrUrl.startsWith("file:") || pathOrUrl.startsWith("blob:")
             ? fileURLToPath(pathOrUrl)
+            : pathOrUrl.startsWith("wc-file:")
+            ? pathOrUrl.slice("wc-file:".length)
             : pathOrUrl;
         return this.createRequire(p);
       };
@@ -386,7 +469,7 @@ export class CJSLoader {
         const esbuildMod = await import("esbuild-wasm");
         if (typeof (esbuildMod as { build?: unknown }).build !== "function") {
           throw new Error(
-            "esbuild.build is not a function — ensure esbuild-wasm is initialized",
+            "esbuild.build is not a function — ensure esbuild-wasm is initialized"
           );
         }
         // Wrap esbuild so every build() call gets VFS plugin injected.
@@ -397,11 +480,13 @@ export class CJSLoader {
             this.vfs,
             this.resolver,
             this.syncCache,
-            this.fileSource,
+            this.fileSource
           );
       } catch (e) {
         throw new Error(
-          `Failed to load esbuild-wasm (required for config bundling): ${e instanceof Error ? e.message : String(e)}`,
+          `Failed to load esbuild-wasm (required for config bundling): ${
+            e instanceof Error ? e.message : String(e)
+          }`
         );
       }
       try {
@@ -444,7 +529,7 @@ export class CJSLoader {
             const nodeModulesPkg = PathUtils.join(
               PathUtils.dirname(projectPkgJson),
               "node_modules",
-              "package.json",
+              "package.json"
             );
             if (!this.syncCache.has(nodeModulesPkg))
               this.syncCache.set(nodeModulesPkg, content);
@@ -489,12 +574,12 @@ export class CJSLoader {
                       p,
                       typeof raw === "string"
                         ? raw
-                        : new TextDecoder().decode(raw as Uint8Array),
+                        : new TextDecoder().decode(raw as Uint8Array)
                     );
                   } catch {
                     this.syncCache!.set(p, "");
                   }
-                }),
+                })
               );
             } catch {
               // Package dir may not exist
@@ -525,12 +610,12 @@ export class CJSLoader {
                       p,
                       typeof raw === "string"
                         ? raw
-                        : new TextDecoder().decode(raw as Uint8Array),
+                        : new TextDecoder().decode(raw as Uint8Array)
                     );
                   } catch {
                     this.syncCache!.set(p, "");
                   }
-                }),
+                })
               );
             } catch {
               // Project dir may not exist
@@ -647,7 +732,7 @@ export class CJSLoader {
     const __req = this.createRequire(resolved);
     const __resolve = (id: string) => this.resolver.resolve(id, resolved);
     const AsyncFunction = Object.getPrototypeOf(
-      async function () {},
+      async function () {}
     ).constructor;
 
     const fn = new AsyncFunction(
@@ -659,7 +744,7 @@ export class CJSLoader {
       "__dirname",
       "process",
       "globalThis",
-      asyncCode,
+      asyncCode
     );
 
     await fn(
@@ -670,7 +755,7 @@ export class CJSLoader {
       resolved,
       module.dirname,
       this.process,
-      globalThis,
+      globalThis
     );
 
     module.loaded = true;

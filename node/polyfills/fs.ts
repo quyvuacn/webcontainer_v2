@@ -690,10 +690,69 @@ export function createFsPolyfill(
         for (const k of syncCache.keys()) {
           if (k.startsWith(prefix)) return dirStats;
         }
-        throw Object.assign(
-          new Error(`ENOENT: no such file or directory, stat '${path}'`),
-          { code: "ENOENT" },
-        );
+      }
+      if (vfs.readFileSync) {
+        const now = new Date();
+        try {
+          const content = vfs.readFileSync(resolved);
+          const size =
+            typeof content === "string"
+              ? new TextEncoder().encode(content).length
+              : (content as Uint8Array).length;
+          return {
+            ino: 0,
+            size,
+            mode: 0o644,
+            atime: now,
+            mtime: now,
+            ctime: now,
+            birthtime: now,
+            atimeMs: now.getTime(),
+            mtimeMs: now.getTime(),
+            ctimeMs: now.getTime(),
+            birthtimeMs: now.getTime(),
+            dev: 0,
+            nlink: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+            blksize: 4096,
+            blocks: Math.ceil(size / 512),
+            isFile: () => true,
+            isDirectory: () => false,
+            isSymbolicLink: () => false,
+          };
+        } catch {
+          if (vfs.existsSync?.(resolved)) {
+            return {
+              ino: 0,
+              size: 0,
+              mode: 0o755,
+              atime: now,
+              mtime: now,
+              ctime: now,
+              birthtime: now,
+              atimeMs: now.getTime(),
+              mtimeMs: now.getTime(),
+              ctimeMs: now.getTime(),
+              birthtimeMs: now.getTime(),
+              dev: 0,
+              nlink: 2,
+              uid: 0,
+              gid: 0,
+              rdev: 0,
+              blksize: 4096,
+              blocks: 0,
+              isFile: () => false,
+              isDirectory: () => true,
+              isSymbolicLink: () => false,
+            };
+          }
+          throw Object.assign(
+            new Error(`ENOENT: no such file or directory, stat '${path}'`),
+            { code: "ENOENT" },
+          );
+        }
       }
       throw new Error("statSync not supported in browser");
     },

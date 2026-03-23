@@ -19,7 +19,10 @@
       "Bash(powershell -Command \"Stop-Process -Id 14636 -Force\")",
       "Bash(find C:UsersvuvieVideosDesktopprojectswebcontainer_v2 -type f \\\\\\(-name nginx* -o -name *.conf -o -name *proxy* \\\\\\))",
       "Bash(grep -r \"5173\\\\|localhost\\\\|port\" C:UsersvuvieVideosDesktopprojectswebcontainer_v2/*.md)",
-      "Bash(cmd //c \"taskkill /PID 6888 /F\")"
+      "Bash(cmd //c \"taskkill /PID 6888 /F\")",
+      "Bash(find C:Usersquy.vuvietDesktopcodespacewebcontainer_v2node_modulesvitedist -type f -name *.js)",
+      "Bash(find C:Usersquy.vuvietDesktopcodespacewebcontainer_v2node_modulesvite -type f \\\\\\(-name *.ts -o -name *.d.ts -o -name *.js \\\\\\))",
+      "Bash(grep:*)"
     ]
   }
 }
