@@ -1,6 +1,5 @@
 import { deserializeRequest, serializeResponse } from "./http_serialize";
-
-const DATA_OFF = 12;
+import { DATA_OFF } from "./lib/sab_protocol";
 
 let handSab: SharedArrayBuffer | null = null;
 let mainPort: MessagePort | null = null;

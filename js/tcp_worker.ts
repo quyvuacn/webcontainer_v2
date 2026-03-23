@@ -1,7 +1,6 @@
 import { serializeResponse } from "./http_serialize";
+import { SAB_SIZE, DATA_OFF } from "./lib/sab_protocol";
 
-const SAB_SIZE = 4 * 1024 * 1024;
-const DATA_OFF = 12;
 const TIMEOUT_MS = 30000;
 
 let swSab: SharedArrayBuffer | null = null;

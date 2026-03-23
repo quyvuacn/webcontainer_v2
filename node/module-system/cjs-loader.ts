@@ -8,6 +8,14 @@ import type { VirtualFS } from "../vfs/core/vfs";
 import type { FileSource } from "../file-source/types";
 import type { ModuleRecord } from "../types";
 import { ModuleResolver } from "./resolver";
+import {
+  WC_BUILTINS,
+  WC_ESBUILD,
+  WC_CREATE_REQUIRE,
+  WC_PATH,
+  WC_ENTRY_PATH,
+  WC_EXIT_HANDLER,
+} from "../../js/lib/wc_globals";
 import { ModuleCache } from "./cache";
 import { detectFormat } from "../transform/detect";
 import {
@@ -296,20 +304,19 @@ export class CJSLoader {
 
     // ESM bundle with top-level await: execute via import(blobUrl)
     if (isEsmBundle) {
-      const prevBuiltins = (globalThis as Record<string, unknown>).__wcBuiltins;
-      const prevEsbuild = (globalThis as Record<string, unknown>).__wcEsbuild;
-      const prevCreateRequire = (globalThis as Record<string, unknown>)
-        .__wcCreateRequire;
-      const prevGlobal = (globalThis as Record<string, unknown>).global;
-      const prevProcess = (globalThis as Record<string, unknown>).process;
+      const g = globalThis as Record<string, unknown>;
+      const prevBuiltins = g[WC_BUILTINS];
+      const prevEsbuild = g[WC_ESBUILD];
+      const prevCreateRequire = g[WC_CREATE_REQUIRE];
+      const prevGlobal = g.global;
+      const prevProcess = g.process;
       const prevConsole = globalThis.console;
       const prevURL = globalThis.URL;
-      const prevBuffer = (globalThis as Record<string, unknown>).Buffer;
-      const prevEventEmitter = (globalThis as Record<string, unknown>)
-        .EventEmitter;
-      const prevReadable = (globalThis as Record<string, unknown>).Readable;
-      const prevWritable = (globalThis as Record<string, unknown>).Writable;
-      const prevWcPath = (globalThis as Record<string, unknown>).__wcPath;
+      const prevBuffer = g.Buffer;
+      const prevEventEmitter = g.EventEmitter;
+      const prevReadable = g.Readable;
+      const prevWritable = g.Writable;
+      const prevWcPath = g[WC_PATH];
       // When entry is a bin script (node_modules/.bin/<cmd> or node_modules/<pkg>/bin/<script>.js),
       // use the package's main field as __wcEntryPath so import.meta.url resolves correctly.
       // e.g. package constants: resolve(fileURLToPath(import.meta.url), '../../..') must give package root.
@@ -341,7 +348,7 @@ export class CJSLoader {
         }
       }
       const entryFileUrl = "file://" + entryPath;
-      (globalThis as Record<string, unknown>).__wcEntryPath = entryPath;
+      g[WC_ENTRY_PATH] = entryPath;
       (globalThis as Record<string, unknown>).global = globalThis;
       (globalThis as Record<string, unknown>).process = this.process;
       // Ensure stdout/stderr have cursorTo (picocolors/CAC expect it; bundlers may strip or use different ref)
@@ -408,7 +415,7 @@ export class CJSLoader {
         dirxml: prevConsole.dirxml?.bind(prevConsole) ?? (() => {}),
         timeStamp: prevConsole.timeStamp?.bind(prevConsole) ?? (() => {}),
       } as unknown as Console;
-      (globalThis as Record<string, unknown>).__wcBuiltins = this.builtins;
+      g[WC_BUILTINS] = this.builtins;
       const fsMod = (this.builtins.get("node:fs") ??
         this.builtins.get("fs")) as Record<string, unknown> | undefined;
       if (fsMod) (globalThis as Record<string, unknown>).fs = fsMod;
@@ -444,8 +451,7 @@ export class CJSLoader {
         this.builtins.get("path")) as
         | { join?: (...args: string[]) => string }
         | undefined;
-      if (pathMod?.join)
-        (globalThis as Record<string, unknown>).__wcPath = pathMod;
+      if (pathMod?.join) g[WC_PATH] = pathMod;
       const urlMod = (this.builtins.get("node:url") ??
         this.builtins.get("url")) as
         | { fileURLToPath?: (u: string) => string }
@@ -454,7 +460,7 @@ export class CJSLoader {
         urlMod?.fileURLToPath ??
         ((u: string) =>
           u.replace(/^file:\/\/\//, "/").replace(/^file:\/\//, "/"));
-      (globalThis as Record<string, unknown>).__wcCreateRequire = (
+      g[WC_CREATE_REQUIRE] = (
         pathOrUrl: string,
       ) => {
         const p =
@@ -474,8 +480,7 @@ export class CJSLoader {
         }
         // Wrap esbuild so every build() call gets VFS plugin injected.
         // With worker: true, the Go WASM Worker can't access our VFS natively.
-        (globalThis as Record<string, unknown>).__wcEsbuild =
-          wrapEsbuildWithVfs(
+        g[WC_ESBUILD] = wrapEsbuildWithVfs(
             esbuildMod as typeof import("esbuild-wasm"),
             this.vfs,
             this.resolver,
@@ -634,11 +639,7 @@ export class CJSLoader {
             }
           };
           globalThis.addEventListener("unhandledrejection", handler);
-          (
-            globalThis as {
-              __wcExitHandler?: (e: PromiseRejectionEvent) => void;
-            }
-          ).__wcExitHandler = handler;
+          g[WC_EXIT_HANDLER] = handler;
         });
         const mod = await import(/* @vite-ignore */ url);
         URL.revokeObjectURL(url);
@@ -647,16 +648,10 @@ export class CJSLoader {
           exitPromise,
           new Promise<null>((r) => setTimeout(() => r(null), 80)),
         ]);
-        const exitHandler = (
-          globalThis as { __wcExitHandler?: (e: PromiseRejectionEvent) => void }
-        ).__wcExitHandler;
+        const exitHandler = g[WC_EXIT_HANDLER] as ((e: PromiseRejectionEvent) => void) | undefined;
         if (exitHandler) {
           globalThis.removeEventListener("unhandledrejection", exitHandler);
-          delete (
-            globalThis as {
-              __wcExitHandler?: (e: PromiseRejectionEvent) => void;
-            }
-          ).__wcExitHandler;
+          delete g[WC_EXIT_HANDLER];
         }
         if (exitCode !== null) throw new ProcessExitError(exitCode);
         const exports = mod.default !== undefined ? mod.default : mod;
@@ -671,41 +666,29 @@ export class CJSLoader {
         this.cache.set(resolved, record);
         return exports;
       } finally {
-        delete (globalThis as Record<string, unknown>).__wcEntryPath;
+        delete g[WC_ENTRY_PATH];
         // ESM bundles (dev server etc.) keep running async code after import() resolves.
         // Restoring global to undefined would break Vite (global.__vite_start_time) and other async code.
-        if (prevGlobal !== undefined)
-          (globalThis as Record<string, unknown>).global = prevGlobal;
+        if (prevGlobal !== undefined) g.global = prevGlobal;
         // Restoring globals to undefined would break all async continuations.
         // Keep them alive if there was no previous value (browser context = no real prev).
-        if (prevBuiltins !== undefined)
-          (globalThis as Record<string, unknown>).__wcBuiltins = prevBuiltins;
-        if (prevEsbuild !== undefined)
-          (globalThis as Record<string, unknown>).__wcEsbuild = prevEsbuild;
-        if (prevCreateRequire !== undefined)
-          (globalThis as Record<string, unknown>).__wcCreateRequire =
-            prevCreateRequire;
-        if (prevProcess !== undefined)
-          (globalThis as Record<string, unknown>).process = prevProcess;
+        if (prevBuiltins !== undefined) g[WC_BUILTINS] = prevBuiltins;
+        if (prevEsbuild !== undefined) g[WC_ESBUILD] = prevEsbuild;
+        if (prevCreateRequire !== undefined) g[WC_CREATE_REQUIRE] = prevCreateRequire;
+        if (prevProcess !== undefined) g.process = prevProcess;
         // else: leave globalThis.process as the polyfill — async code (dev server) still needs it
         if (prevConsole !== undefined) globalThis.console = prevConsole;
         if (prevURL !== undefined) globalThis.URL = prevURL;
-        if (prevBuffer !== undefined)
-          (globalThis as Record<string, unknown>).Buffer = prevBuffer;
-        else delete (globalThis as Record<string, unknown>).Buffer;
-        if (prevEventEmitter !== undefined)
-          (globalThis as Record<string, unknown>).EventEmitter =
-            prevEventEmitter;
-        else delete (globalThis as Record<string, unknown>).EventEmitter;
-        if (prevReadable !== undefined)
-          (globalThis as Record<string, unknown>).Readable = prevReadable;
-        else delete (globalThis as Record<string, unknown>).Readable;
-        if (prevWritable !== undefined)
-          (globalThis as Record<string, unknown>).Writable = prevWritable;
-        else delete (globalThis as Record<string, unknown>).Writable;
-        if (prevWcPath !== undefined)
-          (globalThis as Record<string, unknown>).__wcPath = prevWcPath;
-        else delete (globalThis as Record<string, unknown>).__wcPath;
+        if (prevBuffer !== undefined) g.Buffer = prevBuffer;
+        else delete g.Buffer;
+        if (prevEventEmitter !== undefined) g.EventEmitter = prevEventEmitter;
+        else delete g.EventEmitter;
+        if (prevReadable !== undefined) g.Readable = prevReadable;
+        else delete g.Readable;
+        if (prevWritable !== undefined) g.Writable = prevWritable;
+        else delete g.Writable;
+        if (prevWcPath !== undefined) g[WC_PATH] = prevWcPath;
+        else delete g[WC_PATH];
       }
     }
 

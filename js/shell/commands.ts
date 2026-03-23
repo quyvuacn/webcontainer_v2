@@ -2,6 +2,7 @@ import * as Path from "./path";
 import { npmInstall } from "../npm/install";
 import { npmCi } from "../npm/ci";
 import { npmRun } from "../npm/run";
+import { PORT_PATH_PREFIX } from "../config";
 
 export interface ShellContext {
   args: string[];
@@ -327,7 +328,7 @@ export const commands: Record<
       const u = new URL(url.startsWith("http") ? url : "http://" + url);
       const isLocal = u.hostname === "localhost" || u.hostname === "127.0.0.1";
       if (isLocal && u.port) {
-        fetchUrl = `/__port__/${u.port}${u.pathname}${u.search}`;
+        fetchUrl = `${PORT_PATH_PREFIX}${u.port}${u.pathname}${u.search}`;
       }
     } catch {
       /* keep original url */

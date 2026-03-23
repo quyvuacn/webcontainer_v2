@@ -14,6 +14,7 @@
 import { RunNodeOptions } from "../cli";
 import type { VirtualFS } from "../vfs/core/vfs";
 import { addActiveHandle } from "./active-handles";
+import { WC_ACTIVE_HANDLE_COUNT } from "../../js/lib/wc_globals";
 
 export interface NodeRuntimeHooksOptions {
   /** VFS instance used by runNode and Worker scripts */
@@ -113,5 +114,5 @@ export function uninstallNodeRuntimeHooks(): void {
   delete g.__setupVirtualPort;
   delete g.__runNode;
   delete g.__spawnWorkerThreadsWorker;
-  delete g.__wcActiveHandleCount;
+  delete g[WC_ACTIVE_HANDLE_COUNT];
 }

@@ -6,6 +6,7 @@
 import { PathUtils } from "../vfs/core/path";
 import { parsePackageJson } from "../pkg-json";
 import type { VirtualFS } from "../vfs/core/vfs";
+import { WC_ENTRY_PATH } from "../../js/lib/wc_globals";
 
 export interface ModuleResolverOptions {
   /** Condition order for exports (e.g. ['import','browser','default'] for browser) */
@@ -111,7 +112,7 @@ export class ModuleResolver {
     const fromPath =
       typeof from === "string" &&
       (from.includes("blob:") || from.startsWith("/blob:"))
-        ? (((globalThis as Record<string, unknown>).__wcEntryPath as string) ??
+        ? (((globalThis as Record<string, unknown>)[WC_ENTRY_PATH] as string) ??
           from)
         : from;
     if (this.isBuiltin(id)) {

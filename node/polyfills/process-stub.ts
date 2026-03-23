@@ -3,10 +3,12 @@
  * expects process (e.g. util, assert npm packages). The real ProcessPolyfill
  * is injected per-session via __wcBuiltins; this stub satisfies eager checks.
  */
+import { NODE_VERSION } from "../version";
+
 if (typeof (globalThis as Record<string, unknown>).process === "undefined") {
   const stub = {
     env: {} as Record<string, string>,
-    version: "v20.11.0",
+    version: NODE_VERSION,
     versions: {} as Record<string, string>,
     platform: "linux" as const,
     arch: "x64",

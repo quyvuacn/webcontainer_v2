@@ -13,6 +13,8 @@ import { createVirtualFSAdapter } from "../node/vfs/core/adapter";
 import { createShellVfsAdapter } from "./shell/vfs_adapter";
 import { Shell } from "./shell/shell";
 import * as Path from "./shell/path";
+import { PORT_PATH_PREFIX, PORT_PATH_REGEX } from "./config";
+import { WC_EMIT_SIGINT } from "./lib/wc_globals";
 
 const termOpts = {
   theme: { background: "#0d1117", foreground: "#c9d1d9", cursor: "#58a6ff" },
@@ -218,8 +220,7 @@ function wireInput(meta: {
       state.cursorIndex = 0;
       if (terminateWorkerInSlot(state.workerRefSlot)) return;
       shell.abortCurrentCommand();
-      const emit = (globalThis as { __wcEmitSIGINT?: () => void })
-        .__wcEmitSIGINT;
+      const emit = (globalThis as Record<string, unknown>)[WC_EMIT_SIGINT] as (() => void) | undefined;
       if (emit) emit();
       else term.write(shell.getPrompt());
       return;
@@ -547,7 +548,7 @@ async function init() {
         (document.getElementById("preview-port") as HTMLSelectElement)?.value ||
         "5173";
       try {
-        const r = await fetch(`/__port__/${port}/`);
+        const r = await fetch(`${PORT_PATH_PREFIX}${port}/`);
         const t = await r.text();
         out.textContent = r.ok ? t : `HTTP ${r.status}\n${t}`;
         out.style.color = r.ok ? "#3fb950" : "#f85149";
@@ -574,7 +575,7 @@ async function init() {
     function loadPreview() {
       const port = portSelect.value;
       const path = getPath();
-      const url = `/__port__/${port}${path}`;
+      const url = `${PORT_PATH_PREFIX}${port}${path}`;
       statusEl.textContent = "Loading...";
       iframe.src = url;
     }
@@ -583,7 +584,7 @@ async function init() {
       try {
         const loc = iframe.contentWindow?.location;
         if (loc) {
-          const m = loc.pathname.match(/^\/__port__\/\d+(.*)$/);
+          const m = loc.pathname.match(new RegExp(PORT_PATH_REGEX.source + "(.*)"));
           urlInput.value = m?.[1] || "/" || "/";
         }
       } catch {}

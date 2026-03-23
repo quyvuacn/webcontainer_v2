@@ -11,6 +11,7 @@ import { createVfsPlugin } from "./esbuild-vfs-plugin";
 import type { VirtualFS } from "../vfs/core/vfs";
 import type { ModuleResolver } from "../module-system/resolver";
 import type { FileSource } from "../file-source/types";
+import { WC_ESBUILD_WASM_MODULE, WC_ESBUILD_WASM_BYTES } from "../../js/lib/wc_globals";
 
 let initialized = false;
 
@@ -26,15 +27,14 @@ export const ESBUILD_WASM_CDN = `${_cdnBase}/esbuild-wasm@0.27.4/esbuild.wasm`;
 export async function preloadEsbuildWasm(): Promise<void> {
   if (typeof location === "undefined") return;
   const g = globalThis as Record<string, unknown>;
-  if (g.__wcEsbuildWasmModule) return;
+  if (g[WC_ESBUILD_WASM_MODULE]) return;
   for (const url of [ESBUILD_WASM_LOCAL, ESBUILD_WASM_CDN]) {
     try {
       const res = await fetch(url);
       if (!res.ok) continue;
       const bytes = await res.arrayBuffer();
-      (g as { __wcEsbuildWasmBytes?: ArrayBuffer }).__wcEsbuildWasmBytes =
-        bytes.slice(0);
-      g.__wcEsbuildWasmModule = await WebAssembly.compile(bytes);
+      g[WC_ESBUILD_WASM_BYTES] = bytes.slice(0);
+      g[WC_ESBUILD_WASM_MODULE] = await WebAssembly.compile(bytes);
       return;
     } catch {
       continue;
@@ -56,7 +56,7 @@ export async function ensureInit(): Promise<void> {
       return;
     }
     const g = globalThis as Record<string, unknown>;
-    const wasmModule = g.__wcEsbuildWasmModule as
+    const wasmModule = g[WC_ESBUILD_WASM_MODULE] as
       | WebAssembly.Module
       | undefined;
     await esbuild.initialize(

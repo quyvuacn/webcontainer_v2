@@ -4,6 +4,8 @@
 
 import { PathUtils } from "../vfs/core/path";
 import EventEmitter from "eventemitter3";
+import { NODE_VERSION, NODE_VERSION_BARE } from "../version";
+import { WC_EXIT_RESOLVE } from "../../js/lib/wc_globals";
 
 export interface TerminalLike {
   write: (text: string) => void;
@@ -119,9 +121,9 @@ export class ProcessPolyfill {
   execArgv: string[] = [];
   platform = "linux" as const;
   arch = "x64";
-  version = "v20.11.0";
+  version = NODE_VERSION;
   versions: Record<string, string> = {
-    node: "20.11.0",
+    node: NODE_VERSION_BARE,
     v8: "10.2.154.26",
     uv: "1.45.0",
     zlib: "1.2.13",
@@ -172,12 +174,11 @@ export class ProcessPolyfill {
   };
 
   exit = (code = 0): never => {
-    const r = (globalThis as { __wcExitResolve?: (c: number) => void })
-      .__wcExitResolve;
+    const g = globalThis as Record<string, unknown>;
+    const r = g[WC_EXIT_RESOLVE] as ((c: number) => void) | undefined;
     if (r) {
       r(code);
-      delete (globalThis as { __wcExitResolve?: (c: number) => void })
-        .__wcExitResolve;
+      delete g[WC_EXIT_RESOLVE];
     }
     throw new ProcessExitError(code);
   };

@@ -7,7 +7,8 @@ import {
   registerSyncVfsChannel,
 } from "./main";
 import { createSyncVfsSab } from "./lib/sync_vfs_channel";
-import { VFS_PREFIX } from "./config";
+import { VFS_PREFIX, PORT_PATH_REGEX } from "./config";
+import { WC_ESBUILD_WASM_BYTES } from "./lib/wc_globals";
 
 export type WorkerRefSlot = {
   current: {
@@ -93,7 +94,7 @@ function makeTcpRegHandler(
             ? Object.entries(req.headers)
             : [];
           const body: number[] = [];
-          const path = (req.path || "/").replace(/^\/__port__\/\d+/, "") || "/";
+          const path = (req.path || "/").replace(PORT_PATH_REGEX, "") || "/";
           const q = (req.url || "").includes("?")
             ? (req.url || "").slice((req.url || "").indexOf("?"))
             : "";
@@ -245,8 +246,7 @@ export function createNodeRunner(
             new MessageChannel();
           registerSyncVfsChannel(childSyncFsSab, childSyncIn);
 
-          const wbytes = (globalThis as { __wcEsbuildWasmBytes?: ArrayBuffer })
-            .__wcEsbuildWasmBytes;
+          const wbytes = (globalThis as Record<string, unknown>)[WC_ESBUILD_WASM_BYTES] as ArrayBuffer | undefined;
           const wcopy = wbytes?.slice(0);
           const t: Transferable[] = [p2, tcpRegC2, childSyncOut];
           if (wcopy) t.push(wcopy);
@@ -285,8 +285,7 @@ export function createNodeRunner(
       const { port1: syncFsIn, port2: syncFsOut } = new MessageChannel();
       registerSyncVfsChannel(syncFsSab, syncFsIn);
 
-      const wasmBytes = (globalThis as { __wcEsbuildWasmBytes?: ArrayBuffer })
-        .__wcEsbuildWasmBytes;
+      const wasmBytes = (globalThis as Record<string, unknown>)[WC_ESBUILD_WASM_BYTES] as ArrayBuffer | undefined;
       const wasmCopy = wasmBytes?.slice(0);
       const transfer: Transferable[] = [port2, tcpReg2, syncFsOut];
       if (wasmCopy) transfer.push(wasmCopy);

@@ -17,6 +17,15 @@ import {
   type TerminalLike,
 } from "./polyfills/process";
 import { createSetupVirtualPortHook } from "./polyfills/node-runtime-hooks";
+import { NODE_VERSION } from "./version";
+import {
+  WC_EMIT_SIGINT,
+  WC_PROCESS_STACK,
+  WC_EXIT_RESOLVE,
+  WC_ACTIVE_HANDLE_COUNT,
+  WC_ESBUILD_WASM_MODULE,
+  WC_HAS_TCP_REG,
+} from "../js/lib/wc_globals";
 
 export interface RunNodeOptions {
   cwd?: string;
@@ -47,7 +56,7 @@ export async function runNode(
 
   // node --version / -v
   if (args[0] === "--version" || args[0] === "-v") {
-    terminal.write("v20.11.0\n");
+    terminal.write(NODE_VERSION + "\n");
     return 0;
   }
 
@@ -100,20 +109,20 @@ export async function runNode(
   );
 
   const g = globalThis as Record<string, unknown>;
-  if (!g.__setupVirtualPort && !(g.__wcHasTcpReg as boolean))
+  if (!g.__setupVirtualPort && !(g[WC_HAS_TCP_REG] as boolean))
     g.__setupVirtualPort = createSetupVirtualPortHook();
-  const stack = (g.__wcProcessStack as ProcessPolyfill[]) ?? [];
+  const stack = (g[WC_PROCESS_STACK] as ProcessPolyfill[]) ?? [];
   stack.push(process);
-  g.__wcProcessStack = stack;
-  g.__wcEmitSIGINT = () => {
-    const s = g.__wcProcessStack as ProcessPolyfill[];
+  g[WC_PROCESS_STACK] = stack;
+  g[WC_EMIT_SIGINT] = () => {
+    const s = g[WC_PROCESS_STACK] as ProcessPolyfill[];
     if (!s?.length) return;
     const p = s.pop()!;
     try {
       if (p.listenerCount("SIGINT") > 0) p.emit("SIGINT");
       else p.exit(130);
     } catch {
-      (g as { __wcEmitSIGINT?: () => void }).__wcEmitSIGINT?.();
+      (g[WC_EMIT_SIGINT] as (() => void) | undefined)?.();
     }
   };
 
@@ -141,10 +150,9 @@ export async function runNode(
     fileSource,
   );
 
-  g.__wcActiveHandleCount = 0;
+  g[WC_ACTIVE_HANDLE_COUNT] = 0;
   const exitPromise = new Promise<number>((resolve) => {
-    (g as { __wcExitResolve?: (code: number) => void }).__wcExitResolve =
-      resolve;
+    g[WC_EXIT_RESOLVE] = resolve;
   });
   const timers = (builtins.get("node:timers") ?? builtins.get("timers")) as
     | {
@@ -169,11 +177,11 @@ export async function runNode(
   g.process = process;
 
   try {
-    if (typeof location !== "undefined" && !g.__wcEsbuildWasmModule)
+    if (typeof location !== "undefined" && !g[WC_ESBUILD_WASM_MODULE])
       await preloadEsbuildWasm();
     await ensureInit();
     await loader.run(resolvedPath, cwd);
-    if ((g.__wcActiveHandleCount as number) > 0) return await exitPromise;
+    if ((g[WC_ACTIVE_HANDLE_COUNT] as number) > 0) return await exitPromise;
     return 0;
   } catch (err) {
     if (err instanceof ProcessExitError) {
@@ -183,9 +191,9 @@ export async function runNode(
     (terminal.writeError ?? terminal.write)(`${msg}\n`);
     return 1;
   } finally {
-    const s = g.__wcProcessStack as ProcessPolyfill[];
+    const s = g[WC_PROCESS_STACK] as ProcessPolyfill[];
     if (s?.length && s[s.length - 1] === process) s.pop();
-    if (!s?.length) delete g.__wcEmitSIGINT;
+    if (!s?.length) delete g[WC_EMIT_SIGINT];
   }
 }
 

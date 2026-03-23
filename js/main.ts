@@ -8,7 +8,8 @@ import {
   opfsListAll,
   createBroadcastChannel,
 } from "./opfs_bridge";
-import { VFS_PREFIX } from "./config";
+import { VFS_PREFIX, PORT_PATH_REGEX, BUILTIN_PATH_PREFIX, VITE_TIMESTAMP_PATTERN } from "./config";
+import { SAB_SIZE, DATA_OFF } from "./lib/sab_protocol";
 import { createCdnVfsProxy } from "./cdn/vfs_proxy";
 import { lazyFetchNodeModulesFile } from "./cdn/lazy_node_modules";
 import { handleSyncFsRequest } from "./lib/sync_vfs_channel";
@@ -39,7 +40,6 @@ const portSabs = new Map<number, SharedArrayBuffer>();
 // MessagePort returned to main thread from sendPortToSw — closed before re-creating on SW restart
 const portMainPorts = new Map<number, MessagePort>();
 let controllerchangeAttached = false;
-const SAB_SIZE = 4 * 1024 * 1024;
 
 function acquireTabLock(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -85,18 +85,24 @@ function handleVfsPort(port: MessagePort) {
     } | null;
     mkdir?: (p: string) => void;
   } | null;
+  const lazyRead = async (path: string): Promise<Uint8Array | null> => {
+    let bytes = v!.read(path);
+    if (!bytes && path.includes("node_modules/")) {
+      bytes = await lazyFetchNodeModulesFile(path, v!.read.bind(v!), v!.write.bind(v!));
+    }
+    return bytes ?? null;
+  };
+  const lazyExists = async (path: string): Promise<boolean> => {
+    if (v!.exists?.(path) ?? v!.read(path) !== null) return true;
+    if (!path.includes("node_modules/")) return false;
+    return (await lazyFetchNodeModulesFile(path, v!.read.bind(v!), v!.write.bind(v!))) !== null;
+  };
+
   port.onmessage = async ({ data }: MessageEvent<VfsPortMsg>) => {
     const path = (data.path ?? "").replace(/^\/+/, "");
     switch (data.op) {
       case "read": {
-        let bytes = v!.read(path);
-        if (!bytes && path.includes("node_modules/")) {
-          bytes = await lazyFetchNodeModulesFile(
-            path,
-            v!.read.bind(v!),
-            v!.write.bind(v!),
-          );
-        }
+        const bytes = await lazyRead(path);
         port.postMessage({ id: data.id, bytes: bytes ? [...bytes] : null });
         break;
       }
@@ -121,16 +127,7 @@ function handleVfsPort(port: MessagePort) {
         break;
       }
       case "exists": {
-        let ok = v!.exists?.(path) ?? v!.read(path) !== null;
-        if (!ok && path.includes("node_modules/")) {
-          // Fetch and cache so subsequent reads work immediately
-          const fetched = await lazyFetchNodeModulesFile(
-            path,
-            v!.read.bind(v!),
-            v!.write.bind(v!),
-          );
-          ok = fetched !== null;
-        }
+        const ok = await lazyExists(path);
         port.postMessage({ id: data.id, ok });
         break;
       }
@@ -210,30 +207,20 @@ export function registerSyncVfsChannel(
 ) {
   if (!vfs) return;
   const v = vfs;
+  const strip = (path: string) => (path.startsWith("/") ? path.slice(1) : path);
   const handleRead = async (path: string): Promise<Uint8Array | null> => {
-    const stripped = path.startsWith("/") ? path.slice(1) : path;
-    let bytes = v.read(stripped);
-    if (!bytes && stripped.includes("node_modules/")) {
-      bytes = await lazyFetchNodeModulesFile(
-        stripped,
-        v.read.bind(v),
-        v.write.bind(v),
-      );
+    const p = strip(path);
+    let bytes = v.read(p);
+    if (!bytes && p.includes("node_modules/")) {
+      bytes = await lazyFetchNodeModulesFile(p, v.read.bind(v), v.write.bind(v));
     }
     return bytes ?? null;
   };
   const handleExists = async (path: string): Promise<boolean> => {
-    const stripped = path.startsWith("/") ? path.slice(1) : path;
-    if (v.exists(stripped)) return true;
-    if (stripped.includes("node_modules/")) {
-      const fetched = await lazyFetchNodeModulesFile(
-        stripped,
-        v.read.bind(v),
-        v.write.bind(v),
-      );
-      return fetched !== null;
-    }
-    return false;
+    const p = strip(path);
+    if (v.exists(p)) return true;
+    if (!p.includes("node_modules/")) return false;
+    return (await lazyFetchNodeModulesFile(p, v.read.bind(v), v.write.bind(v))) !== null;
   };
   syncPort.onmessage = () => handleSyncFsRequest(sab, handleRead, handleExists);
 }
@@ -415,7 +402,7 @@ export function setupVirtualPort(
       };
       try {
         const u = new URL(req.url, "http://localhost");
-        req.path = u.pathname.replace(/^\/__port__\/\d+/, "") || "/";
+        req.path = u.pathname.replace(PORT_PATH_REGEX, "") || "/";
       } catch {}
       const res = {
         statusCode: 200,
@@ -469,7 +456,7 @@ export function createServer(handler: (req: unknown, res: unknown) => void) {
       setupVirtualPort(port, (req, res) => {
         const url = new URL((req as { url: string }).url);
         (req as { path: string }).path =
-          url.pathname.replace(/^\/__port__\/\d+/, "") || "/";
+          url.pathname.replace(PORT_PATH_REGEX, "") || "/";
         handler(req, res);
       });
     },
@@ -619,8 +606,8 @@ async function bootstrap() {
         let bytes: Uint8Array | null = null;
 
         // Serve Node.js builtin ESM stubs (e.g. "builtin/path", "builtin/fs")
-        if (reqPath.startsWith("builtin/")) {
-          const builtinName = reqPath.slice("builtin/".length);
+        if (reqPath.startsWith(BUILTIN_PATH_PREFIX)) {
+          const builtinName = reqPath.slice(BUILTIN_PATH_PREFIX.length);
           try {
             const stub = getBuiltinEsmContent(builtinName);
             bytes = new TextEncoder().encode(stub);
@@ -639,7 +626,7 @@ async function bootstrap() {
               bytes &&
               vfs &&
               /\.(m?js|cjs)$/.test(reqPath) &&
-              !reqPath.includes(".timestamp-")
+              !reqPath.includes(VITE_TIMESTAMP_PATTERN)
             ) {
               try {
                 const src = new TextDecoder().decode(bytes);

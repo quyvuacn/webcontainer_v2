@@ -16,6 +16,11 @@ import { preloadEsbuildWasm } from "../node/transform/esm-to-cjs";
 import { runNode } from "../node/cli";
 import { PathUtils } from "../node/vfs/core/path";
 import { syncRead, syncExists } from "./lib/sync_vfs_channel";
+import {
+  WC_HAS_TCP_REG,
+  WC_ESBUILD_WASM_MODULE,
+  WC_VFS_PREFIX,
+} from "./lib/wc_globals";
 
 let parentPortListeners: ((data: unknown) => void)[] = [];
 let workerTerminal: {
@@ -313,7 +318,7 @@ function setupTcpRegHook(tcpRegPort: MessagePort) {
       };
     });
   };
-  (globalThis as { __wcHasTcpReg?: boolean }).__wcHasTcpReg = true;
+  (globalThis as Record<string, unknown>)[WC_HAS_TCP_REG] = true;
   g.__unregisterVirtualPorts = () => {
     for (const port of registeredPorts) {
       tcpRegPort.postMessage({
@@ -340,9 +345,9 @@ async function runInWorker(
   const g = globalThis as Record<string, unknown>;
   if (tcpRegPort) setupTcpRegHook(tcpRegPort);
   setupSpawnHook();
-  if (!g.__wcEsbuildWasmModule) {
+  if (!g[WC_ESBUILD_WASM_MODULE]) {
     if (wasmBytes) {
-      g.__wcEsbuildWasmModule = await WebAssembly.compile(wasmBytes);
+      g[WC_ESBUILD_WASM_MODULE] = await WebAssembly.compile(wasmBytes);
     } else {
       await preloadEsbuildWasm();
     }
@@ -429,7 +434,7 @@ self.onmessage = async ({
       vfsPrefix,
     } = init;
     if (vfsPrefix)
-      (globalThis as Record<string, unknown>).__wcVfsPrefix = vfsPrefix;
+      (globalThis as Record<string, unknown>)[WC_VFS_PREFIX] = vfsPrefix;
     if (!vfsPort) {
       self.postMessage({ type: "error", data: "init requires vfsPort" });
       self.postMessage({ type: "exit", data: 1 });

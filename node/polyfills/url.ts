@@ -3,6 +3,7 @@
  */
 
 import { PathUtils } from "../vfs/core/path";
+import { WC_ENTRY_PATH, WC_VFS_PREFIX } from "../../js/lib/wc_globals";
 
 function resolvePath(cwd: string, p: string): string {
   if (PathUtils.isAbsolute(p)) return PathUtils.normalize(p);
@@ -22,7 +23,7 @@ export function createUrlPolyfill(options: UrlPolyfillOptions = {}) {
     fileURLToPath(url: string | URL): string {
       const u = typeof url === "string" ? new URL(url) : url;
       if (u.protocol === "blob:") {
-        const entry = (globalThis as Record<string, unknown>).__wcEntryPath as
+        const entry = (globalThis as Record<string, unknown>)[WC_ENTRY_PATH] as
           | string
           | undefined;
         if (entry) return entry;
@@ -57,7 +58,7 @@ export function createUrlPolyfill(options: UrlPolyfillOptions = {}) {
         typeof location.origin === "string"
       ) {
         const vfsPrefix =
-          ((globalThis as Record<string, unknown>).__wcVfsPrefix as
+          ((globalThis as Record<string, unknown>)[WC_VFS_PREFIX] as
             | string
             | undefined) ?? "__r__";
         const wcPath = resolvePath(getCwd(), normalized);
