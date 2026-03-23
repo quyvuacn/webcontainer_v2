@@ -463,9 +463,7 @@ export class CJSLoader {
         urlMod?.fileURLToPath ??
         ((u: string) =>
           u.replace(/^file:\/\/\//, "/").replace(/^file:\/\//, "/"));
-      g[WC_CREATE_REQUIRE] = (
-        pathOrUrl: string,
-      ) => {
+      g[WC_CREATE_REQUIRE] = (pathOrUrl: string) => {
         const p =
           pathOrUrl.startsWith("file:") || pathOrUrl.startsWith("blob:")
             ? fileURLToPath(pathOrUrl)
@@ -484,12 +482,12 @@ export class CJSLoader {
         // Wrap esbuild so every build() call gets VFS plugin injected.
         // With worker: true, the Go WASM Worker can't access our VFS natively.
         g[WC_ESBUILD] = wrapEsbuildWithVfs(
-            esbuildMod as typeof import("esbuild-wasm"),
-            this.vfs,
-            this.resolver,
-            this.syncCache,
-            this.fileSource,
-          );
+          esbuildMod as typeof import("esbuild-wasm"),
+          this.vfs,
+          this.resolver,
+          this.syncCache,
+          this.fileSource,
+        );
       } catch (e) {
         throw new Error(
           `Failed to load esbuild-wasm (required for config bundling): ${
@@ -648,9 +646,13 @@ export class CJSLoader {
         URL.revokeObjectURL(url);
         const exitCode = await Promise.race([
           exitPromise,
-          new Promise<null>((r) => setTimeout(() => r(null), ASYNC_EXIT_GRACE_MS)),
+          new Promise<null>((r) =>
+            setTimeout(() => r(null), ASYNC_EXIT_GRACE_MS),
+          ),
         ]);
-        const exitHandler = g[WC_EXIT_HANDLER] as ((e: PromiseRejectionEvent) => void) | undefined;
+        const exitHandler = g[WC_EXIT_HANDLER] as
+          | ((e: PromiseRejectionEvent) => void)
+          | undefined;
         if (exitHandler) {
           globalThis.removeEventListener("unhandledrejection", exitHandler);
           delete g[WC_EXIT_HANDLER];
@@ -676,7 +678,8 @@ export class CJSLoader {
         // Keep them alive if there was no previous value (browser context = no real prev).
         if (prevBuiltins !== undefined) g[WC_BUILTINS] = prevBuiltins;
         if (prevEsbuild !== undefined) g[WC_ESBUILD] = prevEsbuild;
-        if (prevCreateRequire !== undefined) g[WC_CREATE_REQUIRE] = prevCreateRequire;
+        if (prevCreateRequire !== undefined)
+          g[WC_CREATE_REQUIRE] = prevCreateRequire;
         if (prevProcess !== undefined) g.process = prevProcess;
         // else: leave globalThis.process as the polyfill — async code (dev server) still needs it
         if (prevConsole !== undefined) globalThis.console = prevConsole;

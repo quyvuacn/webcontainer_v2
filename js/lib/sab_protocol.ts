@@ -9,4 +9,4 @@
  */
 export const SAB_CTRL_SLOTS = 3;
 export const DATA_OFF = SAB_CTRL_SLOTS * 4; // 12 bytes
-export const SAB_SIZE = 4 * 1024 * 1024;    // 4 MB
+export const SAB_SIZE = 4 * 1024 * 1024; // 4 MB

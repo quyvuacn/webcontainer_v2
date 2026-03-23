@@ -11,7 +11,10 @@ import { createVfsPlugin } from "./esbuild-vfs-plugin";
 import type { VirtualFS } from "../vfs/core/vfs";
 import type { ModuleResolver } from "../module-system/resolver";
 import type { FileSource } from "../file-source/types";
-import { WC_ESBUILD_WASM_MODULE, WC_ESBUILD_WASM_BYTES } from "../../js/lib/wc_globals";
+import {
+  WC_ESBUILD_WASM_MODULE,
+  WC_ESBUILD_WASM_BYTES,
+} from "../../js/lib/wc_globals";
 
 let initialized = false;
 

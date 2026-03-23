@@ -246,7 +246,9 @@ export function createNodeRunner(
             new MessageChannel();
           registerSyncVfsChannel(childSyncFsSab, childSyncIn);
 
-          const wbytes = (globalThis as Record<string, unknown>)[WC_ESBUILD_WASM_BYTES] as ArrayBuffer | undefined;
+          const wbytes = (globalThis as Record<string, unknown>)[
+            WC_ESBUILD_WASM_BYTES
+          ] as ArrayBuffer | undefined;
           const wcopy = wbytes?.slice(0);
           const t: Transferable[] = [p2, tcpRegC2, childSyncOut];
           if (wcopy) t.push(wcopy);
@@ -285,7 +287,9 @@ export function createNodeRunner(
       const { port1: syncFsIn, port2: syncFsOut } = new MessageChannel();
       registerSyncVfsChannel(syncFsSab, syncFsIn);
 
-      const wasmBytes = (globalThis as Record<string, unknown>)[WC_ESBUILD_WASM_BYTES] as ArrayBuffer | undefined;
+      const wasmBytes = (globalThis as Record<string, unknown>)[
+        WC_ESBUILD_WASM_BYTES
+      ] as ArrayBuffer | undefined;
       const wasmCopy = wasmBytes?.slice(0);
       const transfer: Transferable[] = [port2, tcpReg2, syncFsOut];
       if (wasmCopy) transfer.push(wasmCopy);

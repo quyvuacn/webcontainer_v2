@@ -88,14 +88,24 @@ function handleVfsPort(port: MessagePort) {
   const lazyRead = async (path: string): Promise<Uint8Array | null> => {
     let bytes = v!.read(path);
     if (!bytes && path.includes("node_modules/")) {
-      bytes = await lazyFetchNodeModulesFile(path, v!.read.bind(v!), v!.write.bind(v!));
+      bytes = await lazyFetchNodeModulesFile(
+        path,
+        v!.read.bind(v!),
+        v!.write.bind(v!),
+      );
     }
     return bytes ?? null;
   };
   const lazyExists = async (path: string): Promise<boolean> => {
     if (v!.exists?.(path) ?? v!.read(path) !== null) return true;
     if (!path.includes("node_modules/")) return false;
-    return (await lazyFetchNodeModulesFile(path, v!.read.bind(v!), v!.write.bind(v!))) !== null;
+    return (
+      (await lazyFetchNodeModulesFile(
+        path,
+        v!.read.bind(v!),
+        v!.write.bind(v!),
+      )) !== null
+    );
   };
 
   port.onmessage = async ({ data }: MessageEvent<VfsPortMsg>) => {
@@ -212,7 +222,11 @@ export function registerSyncVfsChannel(
     const p = strip(path);
     let bytes = v.read(p);
     if (!bytes && p.includes("node_modules/")) {
-      bytes = await lazyFetchNodeModulesFile(p, v.read.bind(v), v.write.bind(v));
+      bytes = await lazyFetchNodeModulesFile(
+        p,
+        v.read.bind(v),
+        v.write.bind(v),
+      );
     }
     return bytes ?? null;
   };
@@ -220,7 +234,10 @@ export function registerSyncVfsChannel(
     const p = strip(path);
     if (v.exists(p)) return true;
     if (!p.includes("node_modules/")) return false;
-    return (await lazyFetchNodeModulesFile(p, v.read.bind(v), v.write.bind(v))) !== null;
+    return (
+      (await lazyFetchNodeModulesFile(p, v.read.bind(v), v.write.bind(v))) !==
+      null
+    );
   };
   syncPort.onmessage = () => handleSyncFsRequest(sab, handleRead, handleExists);
 }

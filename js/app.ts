@@ -220,7 +220,9 @@ function wireInput(meta: {
       state.cursorIndex = 0;
       if (terminateWorkerInSlot(state.workerRefSlot)) return;
       shell.abortCurrentCommand();
-      const emit = (globalThis as Record<string, unknown>)[WC_EMIT_SIGINT] as (() => void) | undefined;
+      const emit = (globalThis as Record<string, unknown>)[WC_EMIT_SIGINT] as
+        | (() => void)
+        | undefined;
       if (emit) emit();
       else term.write(shell.getPrompt());
       return;
@@ -584,7 +586,9 @@ async function init() {
       try {
         const loc = iframe.contentWindow?.location;
         if (loc) {
-          const m = loc.pathname.match(new RegExp(PORT_PATH_REGEX.source + "(.*)"));
+          const m = loc.pathname.match(
+            new RegExp(PORT_PATH_REGEX.source + "(.*)"),
+          );
           urlInput.value = m?.[1] || "/" || "/";
         }
       } catch {}
