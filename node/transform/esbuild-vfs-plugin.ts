@@ -686,6 +686,23 @@ export function createVfsPlugin(
           }
           return { path: resolved, namespace: "wc-file" };
         } catch (e) {
+          // Before giving up, try to lazy-fetch relative imports from node_modules.
+          // This handles internal chunk files (e.g. vite/dist/node/chunks/dep-XXX.js)
+          // that are not listed in package.json exports and thus not resolvable via
+          // the module resolver — but CAN be fetched from CDN on-demand.
+          if (args.path.startsWith("./") || args.path.startsWith("../")) {
+            const absPath = PathUtils.join(PathUtils.dirname(from), args.path);
+            if (absPath.includes("/node_modules/")) {
+              try {
+                const exists = await vfs.exists(absPath);
+                if (exists) {
+                  return { path: absPath, namespace: "wc-file" };
+                }
+              } catch {
+                // vfs.exists failed — fall through
+              }
+            }
+          }
           // fallbackMode: mark unresolvable as external to prevent native resolver in Worker
           const ret = fallback ? { path: args.path, external: true } : null;
           return ret;
