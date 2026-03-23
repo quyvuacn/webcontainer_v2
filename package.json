@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "proxy": "node proxy-server/index.ts",
+    "proxy": "node proxy-server/index.js",
     "build": "vite build",
     "build:prod": "node scripts/build.js",
     "build:obfuscate": "node scripts/build.js --obfuscate",
