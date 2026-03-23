@@ -206,13 +206,17 @@ export function wrapEsbuildWithVfs(
   syncCache?: Map<string, string | Uint8Array>,
   fileSource?: FileSource,
 ): typeof esbuild {
-  const bridgePlugin = createVfsPlugin(vfs, resolver, syncCache, {
-    fallbackMode: true,
-    useBrowserConditions: true,
-    ...(fileSource && { fileSource }),
-  });
-
   const wrappedBuild: typeof esbuild.build = (options) => {
+    // Use browser conditions only for browser-platform builds (e.g. dep optimization).
+    // For node-platform builds (e.g. config bundling), use Node.js conditions so that
+    // packages like 'vite' (no browser export) resolve correctly.
+    const useBrowserConditions = options.platform !== "node";
+    const bridgePlugin = createVfsPlugin(vfs, resolver, syncCache, {
+      fallbackMode: true,
+      useBrowserConditions,
+      ...(fileSource && { fileSource }),
+    });
+
     const eps = (options as { entryPoints?: string[] | Record<string, string> })
       .entryPoints;
     const entryList = Array.isArray(eps)

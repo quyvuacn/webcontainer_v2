@@ -664,10 +664,18 @@ export function createVfsPlugin(
         const from = importerPath.endsWith("/")
           ? PathUtils.join(importerPath, "index.js")
           : importerPath;
+        const tryResolve = async (path: string, from: string) => {
+          if (useBrowserConditions) {
+            try {
+              return await resolver.resolveForBrowser(path, from);
+            } catch {
+              // Browser conditions failed (e.g. package has no browser export) — fall back to Node.js resolution
+            }
+          }
+          return resolver.resolve(path, from);
+        };
         try {
-          const resolved = useBrowserConditions
-            ? await resolver.resolveForBrowser(args.path, from)
-            : await resolver.resolve(args.path, from);
+          const resolved = await tryResolve(args.path, from);
           for (const stub of stubList) {
             if (
               resolved.includes("/node_modules/" + stub + "/") ||
