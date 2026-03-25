@@ -47,24 +47,36 @@ function runInNewContext(
   _options?: Record<string, unknown>,
 ): unknown {
   const ctx = sandbox ?? {};
-  const keys = Object.keys(ctx);
-  const vals = keys.map((k) => ctx[k]);
-  // Try as expression first, fall back to statement block
-  const tryExpr = `(function(${keys.join(",")}) { "use strict"; return (${code}); })`;
-  const tryStmt = `(function(${keys.join(",")}) { ${code} })`;
-  let fn: ((...args: unknown[]) => unknown) | null = null;
+
+  // Use with() so that:
+  //   1. Sandbox properties are visible as bare names inside code.
+  //   2. Assignments like `x = 42` write through to the ctx object (since
+  //      with() makes ctx the head of the scope chain in non-strict mode).
+  // This matches Node.js vm.runInNewContext where sandbox IS the global context.
+  //
+  // We embed the code string via JSON.stringify to safely pass arbitrary code
+  // across the string boundary, then eval it inside the with block so the
+  // scope chain includes ctx.
+  const escapedCode = JSON.stringify(code);
+  // Two-pass: try expression form first so bare expressions return a value,
+  // then fall back to statement form.
+  const wrapperSrc = `(function(__ctx__) {
+    with (__ctx__) {
+      try { return eval("(" + ${escapedCode} + ")"); }
+      catch(_e1) {
+        return eval(${escapedCode});
+      }
+    }
+  })`;
+
+  let fn: ((ctx: Record<string, unknown>) => unknown) | null = null;
   try {
     // eslint-disable-next-line no-new-func
-    fn = new Function(`return ${tryExpr}`)() as (...args: unknown[]) => unknown;
-  } catch {
-    try {
-      // eslint-disable-next-line no-new-func
-      fn = new Function(`return ${tryStmt}`)() as (...args: unknown[]) => unknown;
-    } catch (e) {
-      throw e;
-    }
+    fn = new Function(`return ${wrapperSrc}`)() as (ctx: Record<string, unknown>) => unknown;
+  } catch (e) {
+    throw e;
   }
-  return fn!(...vals);
+  return fn!(ctx);
 }
 
 function runInThisContext(

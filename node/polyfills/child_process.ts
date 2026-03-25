@@ -21,34 +21,86 @@ class ChildProcess extends EventEmitter {
 
   stdout = new EventEmitter() as EventEmitter & {
     setEncoding?: (enc: string) => void;
+    pipe?: <T>(dest: T) => T;
   };
   stderr = new EventEmitter() as EventEmitter & {
     setEncoding?: (enc: string) => void;
+    pipe?: <T>(dest: T) => T;
   };
+
+  // stdin: a writable-like interface whose chunks are drained by the child runner.
+  // The queue + resolver pattern lets spawnNode deliver chunks async to __runNode.
+  private _stdinQueue: Array<Uint8Array | null> = [];  // null = EOF
+  private _stdinWaiter: ((v: Uint8Array | null) => void) | null = null;
+
   stdin = {
-    write: (
-      _chunk: string | Uint8Array,
-      _enc?: string,
-      cb?: (err?: Error) => void,
-    ) => {
+    write: (chunk: string | Uint8Array, _enc?: string, cb?: (err?: Error) => void): boolean => {
+      const bytes = typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk);
+      if (this._stdinWaiter) {
+        const w = this._stdinWaiter;
+        this._stdinWaiter = null;
+        w(bytes);
+      } else {
+        this._stdinQueue.push(bytes);
+      }
       cb?.();
       return true;
     },
-    end: (_chunk?: unknown, _enc?: unknown, cb?: () => void) => {
+    end: (chunk?: unknown, _enc?: unknown, cb?: () => void): void => {
+      if (chunk && typeof (chunk as string | Uint8Array).length !== "undefined") {
+        this.stdin.write(chunk as string | Uint8Array);
+      }
+      // Push EOF marker
+      if (this._stdinWaiter) {
+        const w = this._stdinWaiter;
+        this._stdinWaiter = null;
+        w(null);
+      } else {
+        this._stdinQueue.push(null);
+      }
       cb?.();
     },
-    on: (_event: string, _fn: unknown) => {},
+    on: (_event: string, _fn: unknown): void => {},
+    setEncoding: (_enc: string): void => {},
+    writable: true,
   };
+
+  // Called by the runner to read one stdin chunk (or null for EOF).
+  _readStdin(): Promise<Uint8Array | null> {
+    if (this._stdinQueue.length > 0) {
+      return Promise.resolve(this._stdinQueue.shift()!);
+    }
+    return new Promise<Uint8Array | null>((resolve) => {
+      this._stdinWaiter = resolve;
+    });
+  }
+
+  // AbortController for killing the underlying __runNode promise.
+  private _abortCtrl = new AbortController();
+  get _signal(): AbortSignal { return this._abortCtrl.signal; }
 
   constructor() {
     super();
     this.stdout.setEncoding = (_enc: string) => {};
     this.stderr.setEncoding = (_enc: string) => {};
+    // Minimal pipe() so proc.stdout.pipe(dest) works
+    this.stdout.pipe = <T extends { write: (c: unknown) => void; end: () => void }>(dest: T): T => {
+      this.stdout.on("data", (chunk: unknown) => dest.write(chunk));
+      this.once("close", () => dest.end());
+      return dest;
+    };
+    this.stderr.pipe = <T extends { write: (c: unknown) => void; end: () => void }>(dest: T): T => {
+      this.stderr.on("data", (chunk: unknown) => dest.write(chunk));
+      this.once("close", () => dest.end());
+      return dest;
+    };
   }
 
-  kill(_signal?: string): boolean {
+  kill(signal?: string): boolean {
     this.killed = true;
-    return false;
+    this.signalCode = signal ?? "SIGTERM";
+    this._abortCtrl.abort();
+    return true;
   }
 }
 
@@ -68,9 +120,14 @@ function spawnNode(
   const proc = new ChildProcess();
 
   // globalThis.__runNode is injected by main.js bootstrap.
-  // Signature: (args: string[], opts: { cwd?: string; env?: Record<string, string> }) => Promise<number>
+  // Extended opts: __proc carries the ChildProcess for stdout/stderr routing,
+  // __stdinReader lets the runner pull stdin chunks, __signal allows kill().
   const runNode = (globalThis as Record<string, unknown>).__runNode as
-    | ((args: string[], opts: SpawnOptions) => Promise<number>)
+    | ((args: string[], opts: SpawnOptions & {
+        __proc?: ChildProcess;
+        __stdinReader?: () => Promise<Uint8Array | null>;
+        __signal?: AbortSignal;
+      }) => Promise<number>)
     | undefined;
 
   if (!runNode) {
@@ -93,12 +150,21 @@ function spawnNode(
         cwd: opts.cwd,
         env: opts.env,
         __proc: proc,
-      } as SpawnOptions & { __proc?: ChildProcess });
+        __stdinReader: () => proc._readStdin(),
+        __signal: proc._signal,
+      });
       proc.exitCode = exitCode;
       proc.emit("close", exitCode, null);
       proc.emit("exit", exitCode, null);
     } catch (e) {
-      proc.emit("error", e instanceof Error ? e : new Error(String(e)));
+      // Treat abort as normal kill — emit close with null signal code
+      if (proc.killed) {
+        proc.exitCode = null;
+        proc.emit("close", null, proc.signalCode);
+        proc.emit("exit", null, proc.signalCode);
+      } else {
+        proc.emit("error", e instanceof Error ? e : new Error(String(e)));
+      }
     }
   });
 
@@ -143,53 +209,103 @@ export function createChildProcessPolyfill() {
       cb?: (err: Error | null, stdout: string, stderr: string) => void,
     ): ChildProcess {
       const callback = typeof optsOrCb === "function" ? optsOrCb : cb;
-      const proc = new ChildProcess();
+      const opts: SpawnOptions = typeof optsOrCb === "object" ? optsOrCb : {};
 
-      // Route simple `node script.js` exec invocations
-      const match = /^node\s+(.+)$/.exec(cmd.trim());
-      if (match) {
-        const scriptArgs = match[1]!.split(/\s+/);
+      // Shell-like tokenizer: handles single/double quotes and backslash escapes.
+      const tokenize = (s: string): string[] => {
+        const tokens: string[] = [];
+        let cur = "";
+        let quote: string | null = null;
+        for (let i = 0; i < s.length; i++) {
+          const ch = s[i]!;
+          if (ch === "\\" && !quote) { cur += s[++i] ?? ""; continue; }
+          if ((ch === '"' || ch === "'") && !quote) { quote = ch; continue; }
+          if (ch === quote) { quote = null; continue; }
+          if (ch === " " && !quote) {
+            if (cur) { tokens.push(cur); cur = ""; }
+            continue;
+          }
+          cur += ch;
+        }
+        if (cur) tokens.push(cur);
+        return tokens;
+      };
+
+      const tokens = tokenize(cmd.trim());
+      const executable = tokens[0] ?? "";
+      const args = tokens.slice(1);
+
+      // Route node / npm / npx through spawnNode
+      const isNode = /^(node|node\d+|npm|npx)$/.test(executable);
+      if (isNode) {
         let stdout = "";
         let stderr = "";
-        const opts: SpawnOptions = typeof optsOrCb === "object" ? optsOrCb : {};
-        const child = spawnNode("node", scriptArgs, opts);
-        child.stdout.on("data", (d: Buffer) => {
-          stdout += d.toString();
-        });
-        child.stderr.on("data", (d: Buffer) => {
-          stderr += d.toString();
-        });
-        child.on("close", (code: number) => {
-          if (code === 0) callback?.(null, stdout, stderr);
-          else
-            callback?.(
-              new Error(`Process exited with code ${code}`),
-              stdout,
-              stderr,
-            );
+        const child = spawnNode(executable, args, opts);
+        child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+        child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+        child.on("close", (code: number | null) => {
+          if (code === 0 || code === null) callback?.(null, stdout, stderr);
+          else callback?.(new Error(`Process exited with code ${code}`), stdout, stderr);
         });
         return child;
       }
 
+      const proc = new ChildProcess();
       queueMicrotask(() => {
-        callback?.(
-          new Error(`exec: "${cmd}" not supported in browser`),
-          "",
-          "",
-        );
+        callback?.(new Error(`exec: "${executable}" command not found in browser`), "", "");
+        proc.exitCode = 127;
+        proc.emit("close", 127, null);
+        proc.emit("exit", 127, null);
       });
       return proc;
     },
 
     execFile(
-      _file: string,
-      _argsOrOptsOrCb?: unknown,
-      _optsOrCb?: unknown,
+      file: string,
+      argsOrOptsOrCb?: string[] | SpawnOptions | ((err: Error | null, stdout: string, stderr: string) => void),
+      optsOrCb?: SpawnOptions | ((err: Error | null, stdout: string, stderr: string) => void),
       cb?: (err: Error | null, stdout: string, stderr: string) => void,
     ): ChildProcess {
+      // Normalize overloaded args: execFile(file, args?, opts?, cb?)
+      let fileArgs: string[] = [];
+      let opts: SpawnOptions = {};
+      let callback: ((err: Error | null, stdout: string, stderr: string) => void) | undefined;
+
+      if (Array.isArray(argsOrOptsOrCb)) {
+        fileArgs = argsOrOptsOrCb;
+        if (typeof optsOrCb === "function") callback = optsOrCb;
+        else if (optsOrCb && typeof optsOrCb === "object") {
+          opts = optsOrCb;
+          callback = cb;
+        }
+      } else if (typeof argsOrOptsOrCb === "function") {
+        callback = argsOrOptsOrCb;
+      } else if (argsOrOptsOrCb && typeof argsOrOptsOrCb === "object") {
+        opts = argsOrOptsOrCb;
+        callback = typeof optsOrCb === "function" ? optsOrCb : cb;
+      }
+
+      // Route node / npm / npx
+      const isNode = /^(node|node\d+|npm|npx)$/.test(file);
+      if (isNode) {
+        let stdout = "";
+        let stderr = "";
+        const child = spawnNode(file, fileArgs, opts);
+        child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+        child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+        child.on("close", (code: number | null) => {
+          if (code === 0 || code === null) callback?.(null, stdout, stderr);
+          else callback?.(new Error(`Process exited with code ${code}`), stdout, stderr);
+        });
+        return child;
+      }
+
       const proc = new ChildProcess();
       queueMicrotask(() => {
-        cb?.(new Error("execFile: not supported in browser"), "", "");
+        callback?.(new Error(`execFile: "${file}" not found in browser`), "", "");
+        proc.exitCode = 127;
+        proc.emit("close", 127, null);
+        proc.emit("exit", 127, null);
       });
       return proc;
     },

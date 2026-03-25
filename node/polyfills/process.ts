@@ -173,7 +173,10 @@ export class ProcessPolyfill {
   cwd = (): string => this._cwd;
 
   chdir = (dir: string): void => {
-    this._cwd = PathUtils.join(this._cwd, dir);
+    // PathUtils.join does not resolve absolute paths — check first.
+    this._cwd = PathUtils.isAbsolute(dir)
+      ? PathUtils.normalize(dir)
+      : PathUtils.join(this._cwd, dir);
   };
 
   exit = (code = 0): never => {
@@ -192,15 +195,27 @@ export class ProcessPolyfill {
 
   hrtime = Object.assign(
     (prev?: [number, number]): [number, number] => {
-      const nowMs = performance.now();
+      // Date.now() gives wall-clock milliseconds from Unix epoch.
+      // performance.now() gives sub-millisecond precision from page load but wrong epoch.
+      // Combine: use Date.now() for the seconds component and performance.now()
+      // fractional part for nanosecond precision.
+      const nowMs = Date.now();
+      const perfFrac = performance.now() % 1; // sub-ms fraction only
       const sec = Math.floor(nowMs / 1000);
-      const ns = Math.floor((nowMs % 1000) * 1_000_000);
-      if (prev) return [sec - prev[0], ns - prev[1]];
+      const ns = Math.floor(((nowMs % 1000) + perfFrac) * 1_000_000);
+      if (prev) {
+        let diffNs = ns - prev[1];
+        let diffSec = sec - prev[0];
+        if (diffNs < 0) { diffNs += 1_000_000_000; diffSec -= 1; }
+        return [diffSec, diffNs];
+      }
       return [sec, ns];
     },
     {
       bigint: (): bigint => {
-        return BigInt(Math.floor(performance.now() * 1_000_000));
+        const nowMs = Date.now();
+        const perfFrac = performance.now() % 1;
+        return BigInt(Math.floor((nowMs + perfFrac) * 1_000_000));
       },
     },
   );

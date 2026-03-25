@@ -97,8 +97,16 @@ export function createFsPolyfill(
   };
 
   // File descriptor map for fs.open/close/read/write
+  // Each entry tracks the resolved path AND the current read/write position.
+  // Without position tracking, sequential read() calls always re-read from offset 0
+  // which breaks Go WASM (esbuild) and any package that reads a file in chunks.
+  interface FdEntry {
+    path: string;
+    position: number;
+    flags: string | number;
+  }
   let fdCounter = 0;
-  const fdMap = new Map<number, string>();
+  const fdMap = new Map<number, FdEntry>();
 
   const fs = {
     constants: {
@@ -180,7 +188,16 @@ export function createFsPolyfill(
         }
         if (!exists) await vfs.writeFile(resolved, new Uint8Array(0));
         fdCounter += 1;
-        fdMap.set(fdCounter, resolved);
+        // Append flag: position starts at end-of-file; we'll resolve lazily in write()
+        const isAppend = flags === "a" || flags === "a+" || flags === 1024 || flags === 1025;
+        fdMap.set(fdCounter, { path: resolved, position: 0, flags });
+        if (isAppend) {
+          // Resolve initial position to EOF
+          vfs.stat(resolved).then((st) => {
+            const entry = fdMap.get(fdCounter);
+            if (entry) entry.position = st.size ?? 0;
+          }).catch(() => {});
+        }
         done(null, fdCounter);
       })().catch(done);
     },
@@ -221,8 +238,8 @@ export function createFsPolyfill(
         };
         return done(null, st);
       }
-      const path = fdMap.get(fd);
-      if (!path) {
+      const entry = fdMap.get(fd);
+      if (!entry) {
         done(
           Object.assign(new Error("EBADF: bad file descriptor"), {
             code: "EBADF",
@@ -231,7 +248,7 @@ export function createFsPolyfill(
         return;
       }
       vfs
-        .stat(path)
+        .stat(entry.path)
         .then((st) => done(null, toNodeStats(st)))
         .catch(done);
     },
@@ -248,8 +265,8 @@ export function createFsPolyfill(
         cb(null, 0, buffer);
         return;
       }
-      const path = fdMap.get(fd);
-      if (!path) {
+      const entry = fdMap.get(fd);
+      if (!entry) {
         cb(
           Object.assign(new Error("EBADF: bad file descriptor"), {
             code: "EBADF",
@@ -257,20 +274,25 @@ export function createFsPolyfill(
         );
         return;
       }
-      readFileImpl(path)
+      readFileImpl(entry.path)
         .then((data) => {
           const bytes =
             data instanceof Uint8Array
               ? data
               : new TextEncoder().encode(data as string);
-          const pos = position ?? 0;
+          // Use explicit position if provided; otherwise use tracked cursor.
+          // This matches POSIX: pread(fd, buf, n, pos) uses pos, read(fd, buf, n) uses fd cursor.
+          const pos = position !== null ? position : entry.position;
           const toRead = Math.min(
             length,
             bytes.length - pos,
             buffer.length - offset,
           );
-          if (toRead > 0) buffer.set(bytes.subarray(pos, pos + toRead), offset);
-          cb(null, toRead, buffer);
+          const bytesRead = Math.max(0, toRead);
+          if (bytesRead > 0) buffer.set(bytes.subarray(pos, pos + bytesRead), offset);
+          // Advance cursor only when no explicit position was given (sequential read)
+          if (position === null) entry.position += bytesRead;
+          cb(null, bytesRead, buffer);
         })
         .catch((err) => cb(err));
     },
@@ -293,8 +315,8 @@ export function createFsPolyfill(
         }
         return;
       }
-      const path = fdMap.get(fd);
-      if (!path) {
+      const entry = fdMap.get(fd);
+      if (!entry) {
         cb(
           Object.assign(new Error("EBADF: bad file descriptor"), {
             code: "EBADF",
@@ -303,20 +325,26 @@ export function createFsPolyfill(
         return;
       }
       const chunk = buffer.subarray(offset, offset + length);
-      readFileImpl(path)
+      readFileImpl(entry.path)
         .then((existing) => {
           const bytes =
             existing instanceof Uint8Array
               ? existing
               : new TextEncoder().encode(existing as string);
-          const pos = position ?? bytes.length;
+          // Use explicit position if provided; otherwise use tracked cursor.
+          const pos = position !== null ? position : entry.position;
           const newLen = Math.max(bytes.length, pos + chunk.length);
           const out = new Uint8Array(newLen);
           out.set(bytes);
           out.set(chunk, pos);
-          return vfs.writeFile(path, out);
+          // Advance cursor only for sequential writes (no explicit position)
+          if (position === null) entry.position += chunk.length;
+          return vfs.writeFile(entry.path, out);
         })
-        .catch(() => vfs.writeFile(path, chunk))
+        .catch(() => {
+          if (position === null) entry.position += chunk.length;
+          return vfs.writeFile(entry.path, chunk);
+        })
         .then(() => cb(null, length, buffer))
         .catch((err) => cb(err));
     },
@@ -622,6 +650,8 @@ export function createFsPolyfill(
       );
       const recursive =
         (options && typeof options === "object" && options.recursive) ?? false;
+      // Fire async; update syncCache so existsSync sees the dir immediately.
+      if (syncCache) syncCache.set(resolved + "/.dir", new Uint8Array(0));
       vfs.mkdir(resolved, { recursive }).catch(() => {});
     },
     readdirSync: (
@@ -763,8 +793,9 @@ export function createFsPolyfill(
       }
       throw new Error("statSync not supported in browser");
     },
-    lstatSync: () => {
-      throw new Error("lstatSync not supported in browser");
+    lstatSync: (path: string): NodeStats => {
+      // VFS has no symlinks — lstatSync == statSync
+      return fs.statSync(path);
     },
     readlink: (path: string, options: Encoding | Callback, cb?: Callback) => {
       const [_, callback] = cbOrOptions(options, cb);
@@ -790,11 +821,24 @@ export function createFsPolyfill(
     realpathSync: (path: string): string => {
       return PathUtils.normalize(resolve(path));
     },
-    unlinkSync: () => {
-      throw new Error("unlinkSync not supported in browser");
+    unlinkSync: (path: string): void => {
+      const resolved = PathUtils.normalize(resolve(typeof path === "string" ? path : String(path)));
+      // Fire-and-forget async unlink; update syncCache immediately so subsequent
+      // existsSync / readFileSync see the deletion without waiting for VFS round-trip.
+      if (syncCache) syncCache.delete(resolved);
+      vfs.unlink(resolved).catch(() => {});
     },
-    rmdirSync: () => {
-      throw new Error("rmdirSync not supported in browser");
+    rmdirSync: (path: string, options?: { recursive?: boolean }): void => {
+      const resolved = PathUtils.normalize(resolve(typeof path === "string" ? path : String(path)));
+      const recursive = options?.recursive ?? false;
+      if (syncCache) {
+        // Remove all entries under this directory from syncCache
+        const prefix = resolved.endsWith("/") ? resolved : resolved + "/";
+        for (const k of Array.from(syncCache.keys())) {
+          if (k === resolved || k.startsWith(prefix)) syncCache.delete(k);
+        }
+      }
+      vfs.rmdir(resolved, { recursive }).catch(() => {});
     },
 
     promises: {

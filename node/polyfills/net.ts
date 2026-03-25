@@ -7,6 +7,23 @@
 
 import EventEmitter from "eventemitter3";
 
+// Type for the virtual TCP client hook injected by main.ts bootstrap.
+// If available, Socket.connect() delegates to it instead of emitting ECONNREFUSED.
+type VirtualConnectHook = (
+  port: number,
+  host: string,
+  callbacks: {
+    onConnect: () => void;
+    onData: (chunk: Uint8Array) => void;
+    onClose: () => void;
+    onError: (err: Error) => void;
+  },
+) => Promise<{
+  write: (chunk: Uint8Array) => void;
+  end: () => void;
+  destroy: () => void;
+}>;
+
 class Socket extends EventEmitter {
   readable = false;
   writable = false;
@@ -22,6 +39,7 @@ class Socket extends EventEmitter {
   pending = true;
   readyState: "closed" | "open" | "opening" = "closed";
   allowHalfOpen = false;
+  private _handle: { write: (c: Uint8Array) => void; end: () => void; destroy: () => void } | null = null;
 
   address() {
     return {
@@ -30,56 +48,141 @@ class Socket extends EventEmitter {
       port: this.localPort,
     };
   }
+
   connect(
-    _portOrOptions: unknown,
-    _hostOrCb?: unknown,
-    _cb?: unknown,
+    portOrOptions: number | { port?: number; host?: string; path?: string },
+    hostOrCb?: string | (() => void),
+    cb?: () => void,
   ): this {
+    // Resolve port + host from overloaded args
+    let port = 0;
+    let host = "localhost";
+    let callback: (() => void) | undefined;
+
+    if (typeof portOrOptions === "object" && portOrOptions !== null) {
+      port = portOrOptions.port ?? 0;
+      host = portOrOptions.host ?? "localhost";
+      callback = typeof hostOrCb === "function" ? hostOrCb : cb;
+    } else {
+      port = portOrOptions as number;
+      if (typeof hostOrCb === "function") callback = hostOrCb;
+      else if (typeof hostOrCb === "string") { host = hostOrCb; callback = cb; }
+    }
+
+    if (callback) this.once("connect", callback);
+
+    this.connecting = true;
+    this.pending = true;
+    this.readyState = "opening";
+
+    // Try virtual TCP hook first (injected by main.ts bootstrap)
+    const hook = (globalThis as Record<string, unknown>).__connectVirtualPort as VirtualConnectHook | undefined;
+
+    if (typeof hook === "function") {
+      hook(port, host, {
+        onConnect: () => {
+          this.connecting = false;
+          this.pending = false;
+          this.readable = true;
+          this.writable = true;
+          this.readyState = "open";
+          this.emit("connect");
+          this.emit("ready");
+        },
+        onData: (chunk: Uint8Array) => {
+          this.bytesRead += chunk.length;
+          this.emit("data", chunk);
+        },
+        onClose: () => {
+          this.readable = false;
+          this.writable = false;
+          this.readyState = "closed";
+          this.emit("end");
+          this.emit("close", false);
+        },
+        onError: (err: Error) => {
+          this.connecting = false;
+          this.destroyed = true;
+          this.readyState = "closed";
+          this.emit("error", err);
+          this.emit("close", true);
+        },
+      })
+        .then((handle) => { this._handle = handle; })
+        .catch((err: Error) => {
+          this.connecting = false;
+          this.destroyed = true;
+          this.readyState = "closed";
+          this.emit("error", err);
+        });
+    } else {
+      // No virtual TCP available — emit ECONNREFUSED so callers know
+      queueMicrotask(() => {
+        this.connecting = false;
+        this.destroyed = true;
+        this.readyState = "closed";
+        const err = Object.assign(
+          new Error(`connect ECONNREFUSED ${host}:${port}`),
+          { code: "ECONNREFUSED", syscall: "connect", address: host, port },
+        );
+        this.emit("error", err);
+        this.emit("close", true);
+      });
+    }
     return this;
   }
-  write(_data: unknown, _enc?: unknown, _cb?: unknown): boolean {
+
+  write(data: string | Uint8Array, _enc?: unknown, cb?: ((err?: Error) => void) | unknown): boolean {
+    const callback = typeof cb === "function" ? cb as (err?: Error) => void : undefined;
+    if (!this._handle || !this.writable) {
+      callback?.(new Error("write after end"));
+      return false;
+    }
+    const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+    this.bytesWritten += bytes.length;
+    this._handle.write(bytes);
+    callback?.();
     return true;
   }
-  end(_data?: unknown, _enc?: unknown, _cb?: unknown): this {
-    this.destroyed = true;
+
+  end(data?: unknown, _enc?: unknown, cb?: unknown): this {
+    if (typeof data === "string" || data instanceof Uint8Array) {
+      this.write(data);
+    }
+    this._handle?.end();
+    this._handle = null;
+    this.writable = false;
     this.readyState = "closed";
+    if (typeof cb === "function") (cb as () => void)();
     return this;
   }
+
   destroy(_err?: unknown): this {
+    this._handle?.destroy();
+    this._handle = null;
     this.destroyed = true;
+    this.readable = false;
+    this.writable = false;
     this.readyState = "closed";
     return this;
   }
-  pause(): this {
-    return this;
+
+  pause(): this { return this; }
+  resume(): this { return this; }
+  setTimeout(_ms: number, _cb?: () => void): this { return this; }
+  setNoDelay(_noDelay?: boolean): this { return this; }
+  setKeepAlive(_enable?: boolean, _delay?: number): this { return this; }
+  ref(): this { return this; }
+  unref(): this { return this; }
+  setEncoding(_enc?: string): this { return this; }
+
+  pipe<T extends { write: (c: unknown) => unknown; end: () => unknown }>(dest: T): T {
+    this.on("data", (chunk) => dest.write(chunk));
+    this.on("end", () => dest.end());
+    return dest;
   }
-  resume(): this {
-    return this;
-  }
-  setTimeout(_ms: number, _cb?: () => void): this {
-    return this;
-  }
-  setNoDelay(_noDelay?: boolean): this {
-    return this;
-  }
-  setKeepAlive(_enable?: boolean, _delay?: number): this {
-    return this;
-  }
-  ref(): this {
-    return this;
-  }
-  unref(): this {
-    return this;
-  }
-  setEncoding(_enc?: string): this {
-    return this;
-  }
-  pipe<T>(_dest: T): T {
-    return _dest;
-  }
-  unpipe(_dest?: unknown): this {
-    return this;
-  }
+
+  unpipe(_dest?: unknown): this { return this; }
 }
 
 class Server extends EventEmitter {
@@ -156,19 +259,21 @@ function createServer(
 }
 
 function createConnection(
-  portOrOptions: unknown,
-  _hostOrCb?: unknown,
-  _cb?: unknown,
+  portOrOptions: number | { port?: number; host?: string },
+  hostOrCb?: string | (() => void),
+  cb?: () => void,
 ): Socket {
-  return new Socket();
+  const socket = new Socket();
+  socket.connect(portOrOptions as number, hostOrCb as string, cb);
+  return socket;
 }
 
 function connect(
-  portOrOptions: unknown,
-  _hostOrCb?: unknown,
-  _cb?: unknown,
+  portOrOptions: number | { port?: number; host?: string },
+  hostOrCb?: string | (() => void),
+  cb?: () => void,
 ): Socket {
-  return new Socket();
+  return createConnection(portOrOptions, hostOrCb, cb);
 }
 
 function isIP(input: string): 0 | 4 | 6 {

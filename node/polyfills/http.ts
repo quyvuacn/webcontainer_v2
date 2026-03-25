@@ -27,6 +27,15 @@ export class IncomingMessage extends EventEmitter {
   trailers: Record<string, string> = {};
   socket = { remoteAddress: "127.0.0.1", remotePort: 0, encrypted: false };
   connection = this.socket;
+  readable = true;
+
+  // Body buffer: chunks pushed by whoever constructs this message (server handler
+  // or ClientRequest response). Drained when the consumer calls resume() or attaches
+  // a 'data' listener.
+  private _bodyChunks: Buffer[] = [];
+  private _bodyEnded = false;
+  private _flowing = false;
+  private _encoding: BufferEncoding | null = null;
 
   constructor(
     opts?: Partial<
@@ -40,21 +49,63 @@ export class IncomingMessage extends EventEmitter {
     if (opts) Object.assign(this, opts);
   }
 
-  setEncoding(_enc: string): this {
+  // Called by the server handler / ClientRequest to push body data.
+  _pushChunk(chunk: Buffer | Uint8Array): void {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (this._flowing) {
+      this.emit("data", this._encoding ? buf.toString(this._encoding) : buf);
+    } else {
+      this._bodyChunks.push(buf);
+    }
+  }
+
+  // Called when all body data has been pushed.
+  _endBody(): void {
+    this._bodyEnded = true;
+    if (this._flowing) {
+      this.readable = false;
+      this.emit("end");
+    }
+  }
+
+  setEncoding(enc: string): this {
+    this._encoding = enc as BufferEncoding;
     return this;
   }
+
+  // Switches to flowing mode: drains any buffered chunks then emits 'end'.
   resume(): this {
-    // Defer so that callers can attach 'data'/'end' listeners first
-    queueMicrotask(() => this.emit("end"));
+    this._flowing = true;
+    queueMicrotask(() => {
+      for (const chunk of this._bodyChunks) {
+        this.emit("data", this._encoding ? chunk.toString(this._encoding) : chunk);
+      }
+      this._bodyChunks = [];
+      if (this._bodyEnded) {
+        this.readable = false;
+        this.emit("end");
+      }
+    });
     return this;
   }
+
   pause(): this {
+    this._flowing = false;
     return this;
   }
+
   destroy(_err?: Error): this {
+    this._bodyChunks = [];
+    this._bodyEnded = true;
+    this.readable = false;
     return this;
   }
-  pipe<T>(dest: T): T {
+
+  // Minimal pipe: attach data/end → write/end on dest stream.
+  pipe<T extends { write: (c: unknown) => unknown; end: () => unknown }>(dest: T): T {
+    this.on("data", (chunk) => dest.write(chunk));
+    this.on("end", () => dest.end());
+    this.resume();
     return dest;
   }
 }
@@ -121,11 +172,33 @@ export class ServerResponse extends EventEmitter {
     return true;
   }
 
-  end(_body?: string | Uint8Array, _enc?: unknown, cb?: () => void): this {
+  end(body?: string | Uint8Array, _enc?: unknown, cb?: () => void): this {
+    if (body !== undefined && body !== null) {
+      const bytes =
+        typeof body === "string"
+          ? new TextEncoder().encode(body)
+          : new Uint8Array(body);
+      this._writeBuffer.push(bytes);
+    }
     this.writableEnded = true;
+    this.headersSent = true;
     if (typeof cb === "function") cb();
     this.emit("finish");
     return this;
+  }
+
+  // Serialize the full response body from all write() / end() calls.
+  // Used by __setupVirtualPort handler to build the HTTP response buffer.
+  _getBody(): Uint8Array {
+    if (this._writeBuffer.length === 0) return new Uint8Array(0);
+    const total = this._writeBuffer.reduce((n, c) => n + c.length, 0);
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const chunk of this._writeBuffer) {
+      out.set(chunk, off);
+      off += chunk.length;
+    }
+    return out;
   }
 }
 
@@ -321,7 +394,7 @@ class ClientRequest extends EventEmitter {
       body: body?.length ? body : undefined,
       signal: this._ctl.signal,
     })
-      .then(async (res) => {
+      .then((res) => {
         const msg = new IncomingMessage({
           statusCode: res.status,
           statusMessage: res.statusText,
@@ -332,10 +405,25 @@ class ClientRequest extends EventEmitter {
         msg.rawHeaders = [...res.headers.entries()].flat();
         this._onRes?.(msg);
         this.emit("response", msg);
-        const buf = Buffer.from(await res.arrayBuffer());
-        queueMicrotask(() => {
-          msg.emit("data", buf);
-          msg.emit("end");
+
+        // Stream response body chunk-by-chunk instead of buffering the whole thing.
+        // This lets consumers pipe large responses (file downloads, SSE) without OOM.
+        const reader = res.body?.getReader();
+        if (!reader) {
+          msg._endBody();
+          return;
+        }
+        const pump = (): Promise<void> =>
+          reader.read().then(({ done, value }) => {
+            if (done) {
+              msg._endBody();
+              return;
+            }
+            msg._pushChunk(Buffer.from(value));
+            return pump();
+          });
+        pump().catch((err: Error) => {
+          if (!this._aborted) this.emit("error", err);
         });
       })
       .catch((err: Error) => {
@@ -349,21 +437,66 @@ class ClientRequest extends EventEmitter {
 const STATUS_CODES: Record<number, string> = {
   100: "Continue",
   101: "Switching Protocols",
+  102: "Processing",
+  103: "Early Hints",
   200: "OK",
   201: "Created",
+  202: "Accepted",
+  203: "Non-Authoritative Information",
   204: "No Content",
+  205: "Reset Content",
+  206: "Partial Content",
+  207: "Multi-Status",
+  208: "Already Reported",
+  226: "IM Used",
+  300: "Multiple Choices",
   301: "Moved Permanently",
   302: "Found",
+  303: "See Other",
   304: "Not Modified",
+  305: "Use Proxy",
+  307: "Temporary Redirect",
+  308: "Permanent Redirect",
   400: "Bad Request",
   401: "Unauthorized",
+  402: "Payment Required",
   403: "Forbidden",
   404: "Not Found",
   405: "Method Not Allowed",
+  406: "Not Acceptable",
+  407: "Proxy Authentication Required",
+  408: "Request Timeout",
+  409: "Conflict",
+  410: "Gone",
+  411: "Length Required",
+  412: "Precondition Failed",
+  413: "Payload Too Large",
+  414: "URI Too Long",
+  415: "Unsupported Media Type",
+  416: "Range Not Satisfiable",
+  417: "Expectation Failed",
+  418: "I'm a Teapot",
+  421: "Misdirected Request",
+  422: "Unprocessable Entity",
+  423: "Locked",
+  424: "Failed Dependency",
+  425: "Too Early",
+  426: "Upgrade Required",
+  428: "Precondition Required",
   429: "Too Many Requests",
+  431: "Request Header Fields Too Large",
+  451: "Unavailable For Legal Reasons",
   500: "Internal Server Error",
+  501: "Not Implemented",
   502: "Bad Gateway",
   503: "Service Unavailable",
+  504: "Gateway Timeout",
+  505: "HTTP Version Not Supported",
+  506: "Variant Also Negotiates",
+  507: "Insufficient Storage",
+  508: "Loop Detected",
+  510: "Not Extended",
+  511: "Network Authentication Required",
 };
 
 function makeRequest(
@@ -411,7 +544,11 @@ export function createHttpPolyfill() {
       return req;
     },
     STATUS_CODES,
-    METHODS: ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],
+    METHODS: ["ACL", "BIND", "CHECKOUT", "CONNECT", "COPY", "DELETE", "GET", "HEAD",
+      "LINK", "LOCK", "M-SEARCH", "MERGE", "MKACTIVITY", "MKCALENDAR", "MKCOL",
+      "MOVE", "NOTIFY", "OPTIONS", "PATCH", "POST", "PROPFIND", "PROPPATCH",
+      "PURGE", "PUT", "REBIND", "REPORT", "SEARCH", "SOURCE", "SUBSCRIBE", "TRACE",
+      "UNBIND", "UNLINK", "UNLOCK", "UNSUBSCRIBE"],
     IncomingMessage,
     ServerResponse,
     Server: HttpServer,
