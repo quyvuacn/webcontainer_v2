@@ -87,7 +87,10 @@ class ProcessStream extends EventEmitter {
     return true;
   }
 
-  setRawMode(_mode: boolean): this {
+  _rawMode = false;
+
+  setRawMode(mode: boolean): this {
+    this._rawMode = mode;
     return this;
   }
 
@@ -103,8 +106,19 @@ class ProcessStream extends EventEmitter {
     return this;
   }
 
-  pipe<T>(dest: T): T {
+  pipe<T extends { write: (c: unknown) => unknown; end: () => unknown }>(dest: T): T {
+    this.on("data", (chunk) => dest.write(chunk));
+    this.on("end", () => dest.end());
     return dest;
+  }
+
+  push(data: string | null): boolean {
+    if (data === null) {
+      this.emit("end");
+      return false;
+    }
+    this.emit("data", Buffer.from(data));
+    return true;
   }
 
   read(): null {

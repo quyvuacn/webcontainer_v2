@@ -252,23 +252,7 @@ function setupTcpRegHook(tcpRegPort: MessagePort) {
       res.end = function (body?: string | Uint8Array) {
         origEnd(body);
         const h = Object.entries(res.getHeaders()) as [string, string][];
-        const writtenChunks: Uint8Array[] =
-          (res as ServerResponse & { _writeBuffer?: Uint8Array[] })
-            ._writeBuffer ?? [];
-        const finalBytes =
-          body instanceof Uint8Array
-            ? body
-            : body
-              ? new TextEncoder().encode(body)
-              : new Uint8Array(0);
-        const allChunks = [...writtenChunks, finalBytes];
-        const totalLen = allChunks.reduce((s, c) => s + c.length, 0);
-        const combined = new Uint8Array(totalLen);
-        let off = 0;
-        for (const c of allChunks) {
-          combined.set(c, off);
-          off += c.length;
-        }
+        const combined = res._getBody();
         port1.postMessage({
           type: "virtual_tcp_response",
           requestId: data.requestId,
@@ -279,9 +263,9 @@ function setupTcpRegHook(tcpRegPort: MessagePort) {
       } as typeof res.end;
       queueMicrotask(() => {
         if (data.body?.length) {
-          req.emit("data", new Uint8Array(data.body));
+          req._pushChunk(new Uint8Array(data.body));
         }
-        req.emit("end");
+        req._endBody();
       });
       try {
         handler(req, res);
@@ -331,6 +315,125 @@ function setupTcpRegHook(tcpRegPort: MessagePort) {
   };
 }
 
+function httpStatusText(status: number): string {
+  const t: Record<number, string> = {
+    100: "Continue", 101: "Switching Protocols",
+    200: "OK", 201: "Created", 202: "Accepted", 204: "No Content",
+    206: "Partial Content", 301: "Moved Permanently", 302: "Found",
+    304: "Not Modified", 307: "Temporary Redirect", 308: "Permanent Redirect",
+    400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
+    404: "Not Found", 405: "Method Not Allowed", 409: "Conflict",
+    410: "Gone", 413: "Payload Too Large", 422: "Unprocessable Entity",
+    429: "Too Many Requests", 500: "Internal Server Error",
+    502: "Bad Gateway", 503: "Service Unavailable", 504: "Gateway Timeout",
+  };
+  return t[status] ?? "Unknown";
+}
+
+function setupVirtualConnectHook() {
+  const g = globalThis as Record<string, unknown>;
+  if (g.__connectVirtualPort) return;
+
+  type ConnectCallbacks = {
+    onConnect: () => void;
+    onData: (chunk: Uint8Array) => void;
+    onClose: () => void;
+    onError: (err: Error) => void;
+  };
+
+  g.__connectVirtualPort = async (
+    port: number,
+    host: string,
+    callbacks: ConnectCallbacks,
+  ): Promise<{
+    write: (chunk: Uint8Array) => void;
+    end: () => void;
+    destroy: () => void;
+  }> => {
+    const chunks: Uint8Array[] = [];
+    let destroyed = false;
+    let endResolve!: () => void;
+    const endPromise = new Promise<void>((r) => { endResolve = r; });
+
+    queueMicrotask(() => callbacks.onConnect());
+
+    endPromise.then(async () => {
+      if (destroyed) return;
+      try {
+        // Combine all written bytes
+        const total = chunks.reduce((n, c) => n + c.length, 0);
+        const reqBytes = new Uint8Array(total);
+        let off = 0;
+        for (const c of chunks) { reqBytes.set(c, off); off += c.length; }
+
+        // Parse HTTP/1.x request line + headers
+        const text = new TextDecoder("utf-8", { fatal: false }).decode(reqBytes);
+        const headEnd = text.indexOf("\r\n\r\n");
+        const headerText = headEnd >= 0 ? text.slice(0, headEnd) : text;
+        const lines = headerText.split("\r\n");
+        const firstLine = lines[0] ?? "";
+        const sp1 = firstLine.indexOf(" ");
+        const method = sp1 > 0 ? firstLine.slice(0, sp1) : "GET";
+        const rest = firstLine.slice(sp1 + 1);
+        const sp2 = rest.indexOf(" ");
+        const rawPath = sp2 > 0 ? rest.slice(0, sp2) : rest || "/";
+
+        const headers: Record<string, string> = {};
+        for (let i = 1; i < lines.length; i++) {
+          const colon = lines[i].indexOf(":");
+          if (colon > 0) {
+            headers[lines[i].slice(0, colon).toLowerCase().trim()] =
+              lines[i].slice(colon + 1).trim();
+          }
+        }
+        delete headers["host"]; // let fetch use the URL host
+
+        const bodyBytes = headEnd >= 0 ? reqBytes.slice(headEnd + 4) : new Uint8Array(0);
+        const path = rawPath.startsWith("/") ? rawPath : "/" + rawPath;
+        const url = `/__port__/${port}${path}`;
+
+        const res = await fetch(url, {
+          method,
+          headers,
+          body: method !== "GET" && method !== "HEAD" && bodyBytes.length > 0
+            ? bodyBytes
+            : undefined,
+        });
+
+        // Serialize to raw HTTP/1.1 response bytes
+        const resBody = new Uint8Array(await res.arrayBuffer());
+        let resHead = `HTTP/1.1 ${res.status} ${httpStatusText(res.status)}\r\n`;
+        res.headers.forEach((v, k) => { resHead += `${k}: ${v}\r\n`; });
+        resHead += "\r\n";
+        const resHeadBytes = new TextEncoder().encode(resHead);
+        const resBytes = new Uint8Array(resHeadBytes.length + resBody.length);
+        resBytes.set(resHeadBytes, 0);
+        resBytes.set(resBody, resHeadBytes.length);
+
+        if (!destroyed) {
+          callbacks.onData(resBytes);
+          callbacks.onClose();
+        }
+      } catch {
+        if (!destroyed) {
+          callbacks.onError(
+            Object.assign(
+              new Error(`connect ECONNREFUSED ${host}:${port}`),
+              { code: "ECONNREFUSED", syscall: "connect", address: host, port },
+            ),
+          );
+        }
+      }
+    });
+
+    return {
+      write(chunk: Uint8Array) { if (!destroyed) chunks.push(chunk); },
+      end() { endResolve(); },
+      destroy() { destroyed = true; },
+    };
+  };
+}
+
 async function runInWorker(
   vfsPort: MessagePort,
   terminal: { write: (t: string) => void; writeError: (t: string) => void },
@@ -345,6 +448,7 @@ async function runInWorker(
   const g = globalThis as Record<string, unknown>;
   if (tcpRegPort) setupTcpRegHook(tcpRegPort);
   setupSpawnHook();
+  setupVirtualConnectHook();
   if (!g[WC_ESBUILD_WASM_MODULE]) {
     if (wasmBytes) {
       g[WC_ESBUILD_WASM_MODULE] = await WebAssembly.compile(wasmBytes);

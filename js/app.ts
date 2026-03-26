@@ -14,7 +14,7 @@ import { createShellVfsAdapter } from "./shell/vfs_adapter";
 import { Shell } from "./shell/shell";
 import * as Path from "./shell/path";
 import { PORT_PATH_PREFIX, PORT_PATH_REGEX } from "./config";
-import { WC_EMIT_SIGINT } from "./lib/wc_globals";
+import { WC_EMIT_SIGINT, WC_PUSH_STDIN, WC_STDIN_RAW } from "./lib/wc_globals";
 
 const termOpts = {
   theme: { background: "#0d1117", foreground: "#c9d1d9", cursor: "#58a6ff" },
@@ -192,14 +192,80 @@ function wireInput(meta: {
       term.write(`\x1b[${state.lineBuffer.length - state.cursorIndex}D`);
   }
   function handleData(data: string) {
-    if (data === "\r" || data === "\n") {
-      term.write("\r\n");
-      const line = state.lineBuffer.trim();
-      if (line) state.history.unshift(line);
-      state.historyIdx = -1;
-      shell.execute(state.lineBuffer).then(() => {
+    const g = globalThis as Record<string, unknown>;
+    const pushStdin = g[WC_PUSH_STDIN] as
+      | ((d: string | null) => void)
+      | undefined;
+    if (pushStdin) {
+      const isRaw =
+        (g[WC_STDIN_RAW] as (() => boolean) | undefined)?.() ?? false;
+      if (data === "\x03") {
+        term.write("^C\r\n");
         state.lineBuffer = "";
         state.cursorIndex = 0;
+        const emit = g[WC_EMIT_SIGINT] as (() => void) | undefined;
+        if (emit) emit();
+        return;
+      }
+      if (isRaw) {
+        pushStdin(data);
+        return;
+      }
+      // Cooked mode: line-buffer input, push on Enter
+      if (data === "\r" || data === "\n") {
+        term.write("\r\n");
+        pushStdin(state.lineBuffer + "\n");
+        state.lineBuffer = "";
+        state.cursorIndex = 0;
+        return;
+      }
+      if (data === "\x04") {
+        // Ctrl+D: flush line or send EOF
+        if (state.lineBuffer.length > 0) {
+          term.write("\r\n");
+          pushStdin(state.lineBuffer + "\n");
+          state.lineBuffer = "";
+          state.cursorIndex = 0;
+        } else {
+          pushStdin(null);
+        }
+        return;
+      }
+      if (data === "\x7f" || data === "\b") {
+        if (state.cursorIndex > 0) {
+          state.lineBuffer =
+            state.lineBuffer.slice(0, state.cursorIndex - 1) +
+            state.lineBuffer.slice(state.cursorIndex);
+          state.cursorIndex--;
+          term.write("\b\x1b[P");
+        }
+        return;
+      }
+      if (data.startsWith("\x1b")) return;
+      if (state.cursorIndex === state.lineBuffer.length) {
+        state.lineBuffer += data;
+        state.cursorIndex += data.length;
+        term.write(data);
+      } else {
+        state.lineBuffer =
+          state.lineBuffer.slice(0, state.cursorIndex) +
+          data +
+          state.lineBuffer.slice(state.cursorIndex);
+        state.cursorIndex += data.length;
+        redrawLine();
+      }
+      return;
+    }
+
+    if (data === "\r" || data === "\n") {
+      term.write("\r\n");
+      const line = state.lineBuffer;
+      state.lineBuffer = "";
+      state.cursorIndex = 0;
+      const trimmed = line.trim();
+      if (trimmed) state.history.unshift(trimmed);
+      state.historyIdx = -1;
+      shell.execute(line).then(() => {
         term.write(shell.getPrompt());
       });
       return;

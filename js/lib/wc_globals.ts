@@ -20,3 +20,5 @@ export const WC_CREATE_REQUIRE = "__wcCreateRequire" as const;
 export const WC_PATH = "__wcPath" as const;
 export const WC_ENTRY_PATH = "__wcEntryPath" as const;
 export const WC_VFS_PREFIX = "__wcVfsPrefix" as const;
+export const WC_PUSH_STDIN = "__wcPushStdin" as const;
+export const WC_STDIN_RAW = "__wcStdinRaw" as const;

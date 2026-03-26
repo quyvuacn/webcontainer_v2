@@ -25,6 +25,8 @@ import {
   WC_ACTIVE_HANDLE_COUNT,
   WC_ESBUILD_WASM_MODULE,
   WC_HAS_TCP_REG,
+  WC_PUSH_STDIN,
+  WC_STDIN_RAW,
 } from "../js/lib/wc_globals";
 
 export interface RunNodeOptions {
@@ -125,6 +127,8 @@ export async function runNode(
       (g[WC_EMIT_SIGINT] as (() => void) | undefined)?.();
     }
   };
+  g[WC_PUSH_STDIN] = (d: string | null) => process.stdin.push(d);
+  g[WC_STDIN_RAW] = () => process.stdin._rawMode;
 
   const fileSource = opts?.fileSource;
   const resolver = new ModuleResolver(vfs, {
@@ -194,6 +198,8 @@ export async function runNode(
     const s = g[WC_PROCESS_STACK] as ProcessPolyfill[];
     if (s?.length && s[s.length - 1] === process) s.pop();
     if (!s?.length) delete g[WC_EMIT_SIGINT];
+    delete g[WC_PUSH_STDIN];
+    delete g[WC_STDIN_RAW];
   }
 }
 
