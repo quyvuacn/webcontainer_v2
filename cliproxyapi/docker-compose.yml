@@ -5,10 +5,13 @@ services:
   cliproxyapi:
     image: eceasy/cli-proxy-api-plus:latest
     container_name: cliproxyapi
+    env_file:
+      - .env
+    environment:
+      - PGSTORE_DSN=${PGSTORE_DSN}
+      - MANAGEMENT_PASSWORD=${MANAGEMENT_PASSWORD}
     ports:
       - "8317:8317"
     volumes:
       - ./logs:/CLIProxyAPI/logs
-      - ./config.yaml:/CLIProxyAPI/config.yaml
-      - ./auth:/root/.cli-proxy-api
     restart: unless-stopped
