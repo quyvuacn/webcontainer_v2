@@ -63,7 +63,7 @@ routing:
 # When true, enable authentication for the WebSocket API (/v1/ws).
 ws-auth: false
 # When > 0, emit blank lines every N seconds for non-streaming responses to prevent idle timeouts.
-nonstream-keepalive-interval: 0
+nonstream-keepalive-interval: 30
 # When true, enable official Codex instructions injection for Codex API requests.
 
 # When false (default), CodexInstructionsForModel returns immediately without modification.
@@ -223,8 +223,10 @@ oauth-model-alias:
       alias: "gemini-3-flash-preview"
     - name: "claude-sonnet-4-5-thinking"
       alias: "gemini-claude-sonnet-4-5-thinking"
+      fork: true
     - name: "claude-opus-4-5-thinking"
       alias: "gemini-claude-opus-4-5-thinking"
+      fork: true
     - name: claude-sonnet-4-6
       alias: gemini-claude-sonnet-4-6
       fork: true
