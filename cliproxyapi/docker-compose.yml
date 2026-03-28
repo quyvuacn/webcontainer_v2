@@ -10,5 +10,4 @@ services:
     volumes:
       - ./logs:/CLIProxyAPI/logs
       - ./config.yaml:/CLIProxyAPI/config.yaml
-    env_file: .env
     restart: unless-stopped
