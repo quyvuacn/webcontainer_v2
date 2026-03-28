@@ -33,14 +33,14 @@
     <div class="max-w-6xl mx-auto">
         <h1 class="text-3xl font-bold text-white mb-8">OAuth Login</h1>
 
-        <!-- Danh sách các Card Provider -->
+        <!-- Provider Card List -->
         <div id="providerList" class="space-y-4">
             <!-- Antigravity Card -->
             <div id="card-antigravity" class="bg-cardbg border border-bordercolor rounded-xl overflow-hidden transition-all duration-300">
                 <div class="p-6 flex items-start justify-between">
                     <div class="flex gap-4">
                         <div class="mt-1">
-                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="w-6 h-6" alt="Google">
+                            <img src="images/Antigravity.svg" class="w-6 h-6" alt="Google">
                         </div>
                         <div>
                             <h3 class="text-white font-bold text-lg">Antigravity OAuth</h3>
@@ -49,7 +49,7 @@
                     </div>
                     <button onclick="startLogin('antigravity')" class="login-btn px-6 py-2 bg-btnbg border border-bordercolor rounded-lg text-white font-medium hover:bg-gray-600 transition disabled:opacity-50">Login</button>
                 </div>
-                <!-- Nội dung mở rộng -->
+                <!-- Expansion Content -->
                 <div class="details hidden-content px-12 pb-8">
                     <div class="dashed-border mb-6">
                         <label class="block text-gray-400 text-xs mb-2">Authorization URL:</label>
@@ -81,8 +81,8 @@
             <div id="card-anthropic" class="bg-cardbg border border-bordercolor rounded-xl overflow-hidden transition-all duration-300">
                 <div class="p-6 flex items-start justify-between">
                     <div class="flex gap-4">
-                        <div class="mt-1 text-orange-400 text-xl">
-                            <i class="fa-solid fa-snowflake"></i>
+                        <div class="mt-1">
+                            <img src="images/Anthropic.svg" class="w-6 h-6" alt="Anthropic">
                         </div>
                         <div>
                             <h3 class="text-white font-bold text-lg">Anthropic OAuth</h3>
@@ -98,8 +98,8 @@
             <div id="card-codex" class="bg-cardbg border border-bordercolor rounded-xl overflow-hidden transition-all duration-300">
                 <div class="p-6 flex items-start justify-between">
                     <div class="flex gap-4">
-                        <div class="mt-1 text-blue-400 text-xl">
-                            <i class="fa-solid fa-square-rss"></i>
+                        <div class="mt-1">
+                            <img src="images/Codex.svg" class="w-6 h-6" alt="Codex">
                         </div>
                         <div>
                             <h3 class="text-white font-bold text-lg">Codex OAuth</h3>
@@ -110,10 +110,45 @@
                 </div>
                 <div class="details hidden-content px-12 pb-8"></div>
             </div>
+
+            <!-- Kimi Card -->
+            <div id="card-kimi" class="bg-cardbg border border-bordercolor rounded-xl overflow-hidden transition-all duration-300">
+                <div class="p-6 flex items-start justify-between">
+                    <div class="flex gap-4">
+                        <div class="mt-1">
+                            <img src="images/Kimi.svg" class="w-6 h-6" alt="Kimi">
+                        </div>
+                        <div>
+                            <h3 class="text-white font-bold text-lg">Kimi OAuth</h3>
+                            <p class="text-gray-500 text-sm mt-1">Login to Kimi (Moonshot) service through OAuth flow, automatically obtain and save authentication files.</p>
+                        </div>
+                    </div>
+                    <button onclick="startLogin('kimi')" class="login-btn px-6 py-2 bg-btnbg border border-bordercolor rounded-lg text-white font-medium hover:bg-gray-600 transition disabled:opacity-50">Login</button>
+                </div>
+                <div class="details hidden-content px-12 pb-8"></div>
+            </div>
+
+            <!-- Qwen Card -->
+            <div id="card-qwen" class="bg-cardbg border border-bordercolor rounded-xl overflow-hidden transition-all duration-300">
+                <div class="p-6 flex items-start justify-between">
+                    <div class="flex gap-4">
+                        <div class="mt-1">
+                            <img src="images/Qwen.svg" class="w-6 h-6" alt="Qwen">
+                        </div>
+                        <div>
+                            <h3 class="text-white font-bold text-lg">Qwen OAuth</h3>
+                            <p class="text-gray-500 text-sm mt-1">Login to Qwen (Aliyun) service through OAuth flow, automatically obtain and save authentication files.</p>
+                        </div>
+                    </div>
+                    <button onclick="startLogin('qwen')" class="login-btn px-6 py-2 bg-btnbg border border-bordercolor rounded-lg text-white font-medium hover:bg-gray-600 transition disabled:opacity-50">Login</button>
+                </div>
+                <div class="details hidden-content px-12 pb-8"></div>
+            </div>
         </div>
     </div>
 
     <script>
+        // --- CONFIG ---
         const PROXY_URL = 'http://localhost:8317';
         const ADMIN_PASSWORD = 'admin123';
         const HEADERS = { 'Authorization': `Bearer ${ADMIN_PASSWORD}`, 'Accept': 'application/json', 'Content-Type': 'application/json' };
@@ -121,6 +156,7 @@
         let pollingInterval = null;
         let authPopup = null;
 
+        // Helper function to find elements within a Card
         function getCardElements(card) {
             return {
                 details: card.querySelector('.details'),
@@ -136,19 +172,19 @@
             const card = document.getElementById(`card-${providerKey}`);
             const els = getCardElements(card);
 
-            // Đóng tất cả các card khác
+            // Close all other cards
             document.querySelectorAll('.details').forEach(d => d.style.display = 'none');
             document.querySelectorAll('.login-btn').forEach(b => b.disabled = false);
 
-            // Hiện nội dung card này
+            // Show current card details
             els.details.style.display = 'block';
 
-            // Nếu nội dung details trống, copy từ Antigravity mẫu
+            // Clone content from Antigravity if template is empty
             if (els.details.innerHTML.trim() === "") {
                 els.details.innerHTML = document.querySelector('#card-antigravity .details').innerHTML;
             }
 
-            // Re-fetch elements sau khi nội dung được tạo
+            // Re-fetch elements after content generation
             const newEls = getCardElements(card);
             newEls.authUrlDiv.innerText = 'Loading...';
             newEls.loginBtn.disabled = true;
@@ -159,7 +195,7 @@
                 const url = data.url || data.verification_url || data.verification_uri;
                 const state = data.state;
 
-                if (!url) throw new Error("Proxy không trả về link!");
+                if (!url) throw new Error("Proxy did not return a valid URL!");
 
                 newEls.authUrlDiv.innerText = url;
 
@@ -194,7 +230,7 @@
             const els = getCardElements(card);
             const callbackUrl = els.callbackInput.value.trim();
 
-            if (!callbackUrl) return alert("Vui lòng dán URL!");
+            if (!callbackUrl) return alert("Please paste the URL first!");
 
             try {
                 els.submitBtn.disabled = true;
@@ -220,9 +256,14 @@
                 if (data.status === "ok") {
                     clearInterval(pollingInterval);
                     if (authPopup && !authPopup.closed) authPopup.close();
-                    els.statusBadge.innerText = "✅ Authentication completed successfully.";
+                    els.statusBadge.innerText = "✅ Authentication completed successfully. Reloading...";
                     els.statusBadge.classList.remove('text-gray-500');
                     els.statusBadge.classList.add('text-green-400', 'border-green-800');
+
+                    // Reload page after 1.5 seconds
+                    setTimeout(() => {
+                        location.reload();
+                    }, 500);
                 } else if (data.status === "error") {
                     clearInterval(pollingInterval);
                     els.statusBadge.innerText = "❌ Failed: " + (data.error || "Unknown error");
