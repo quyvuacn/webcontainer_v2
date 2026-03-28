@@ -221,12 +221,13 @@ oauth-model-alias:
       alias: "gemini-3-pro-preview"
     - name: "gemini-3-flash"
       alias: "gemini-3-flash-preview"
-    - name: "claude-sonnet-4-5"
-      alias: "gemini-claude-sonnet-4-5"
     - name: "claude-sonnet-4-5-thinking"
       alias: "gemini-claude-sonnet-4-5-thinking"
     - name: "claude-opus-4-5-thinking"
       alias: "gemini-claude-opus-4-5-thinking"
+    - name: claude-sonnet-4-6
+      alias: gemini-claude-sonnet-4-6
+      fork: true
   github-copilot:
     - name: claude-haiku-4.5
       alias: claude-haiku-4-5
