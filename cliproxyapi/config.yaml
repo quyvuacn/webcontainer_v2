@@ -228,6 +228,9 @@ oauth-model-alias:
     - name: claude-sonnet-4-6
       alias: gemini-claude-sonnet-4-6
       fork: true
+    - name: claude-opus-4-6-thinking
+      alias: gemini-claude-opus-4-6-thinking
+      fork: true
   github-copilot:
     - name: claude-haiku-4.5
       alias: claude-haiku-4-5
