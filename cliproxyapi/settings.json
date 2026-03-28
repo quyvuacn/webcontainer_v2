@@ -2,14 +2,11 @@
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "admin123",
     "ANTHROPIC_BASE_URL": "http://localhost:8317",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "gemini-claude-opus-4-6-thinking",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gemini-claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gemini-claude-sonnet-4-6",
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000"
-  },
-  "modelOverrides": {
-    "claude-opus-4-6": "gemini-claude-opus-4-6-thinking",
-    "claude-opus-4-5-20251101": "gemini-claude-opus-4-5-thinking",
-    "claude-sonnet-4-6": "gemini-claude-sonnet-4-6",
-    "claude-haiku-4-5": "gemini-claude-sonnet-4-6"
   },
   "permissions": {
     "defaultMode": "plan"
