@@ -31,7 +31,9 @@
       "Bash(ls:*)",
       "Bash(xargs -0 grep -iE \"git.*url|git.*token|git.*user|gitstore\")",
       "Bash(find:*)",
-      "WebFetch(domain:help.router-for.me)"
+      "WebFetch(domain:help.router-for.me)",
+      "Bash(curl -s -X GET \"http://localhost:8317/v0/management/auth?key=12022002Va\")",
+      "Bash(curl:*)"
     ]
   }
 }
