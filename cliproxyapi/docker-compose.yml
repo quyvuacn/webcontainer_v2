@@ -10,4 +10,5 @@ services:
     volumes:
       - ./logs:/CLIProxyAPI/logs
       - ./config.yaml:/CLIProxyAPI/config.yaml
+      - ./auth:/root/.cli-proxy-api
     restart: unless-stopped
